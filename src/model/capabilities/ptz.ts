@@ -490,7 +490,6 @@ export const PTZ: CapabilityModule = {
   detection: {
     evidenceParams: [1029, 6090, 6091, 6092, 6210],
     deviceTypes: [
-      DeviceType.CAMERA_POE_S4,
       DeviceType.OUTDOOR_PT_CAMERA,
       DeviceType.INDOOR_PT_CAMERA,
       DeviceType.INDOOR_PT_CAMERA_1080,
@@ -504,9 +503,10 @@ export const PTZ: CapabilityModule = {
       // grounded the rotate_type wire mapping (see PTZ_ROTATE's doc comment) — confirmed live it has
       // no PTZ capability without this, on a real owned unit.
       DeviceType.FLOODLIGHT_CAMERA_8425,
+      DeviceType.CAMERA_POE_S4,
     ],
     // The portal enables direction steps for the movable sensor of the PoE S4.
-    modelHints: [/^T8E00$/i, /pan.?tilt|\bpt\b|S3[45]0|indoor.?pt/i],
+    modelHints: [/pan.?tilt|\bpt\b|S3[45]0|indoor.?pt/i, /^T8E00$/i],
   },
   emits: ["ptzNotify"],
   /**
