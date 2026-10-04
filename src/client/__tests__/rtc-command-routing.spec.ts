@@ -40,6 +40,26 @@ describe("station-owned RTC command routing", () => {
   it.each([
     [HUB, false],
     [CAMERA, true],
+  ])("routes T8N00 target %s through RTC without requiring the T9000 device type", async (sn, attached) => {
+    const { internals, rtc, p2p, devices } = fixture();
+    devices[0]!.model = "T8N00";
+    devices[0]!.raw = { member: { admin_user_id: "synthetic-admin" } };
+    await internals.routeCommand(sn, command);
+    expect(rtc).toHaveBeenCalledExactlyOnceWith({ stationSn: HUB, adminUserId: "synthetic-admin", attached }, command);
+    expect(p2p).not.toHaveBeenCalled();
+  });
+
+  it("does not select RTC for a similar unsupported NVR model", async () => {
+    const { internals, rtc, p2p, devices } = fixture(DeviceType.HB3);
+    devices[0]!.model = "T8N01";
+    await internals.routeCommand(HUB, command);
+    expect(p2p).toHaveBeenCalledExactlyOnceWith(HUB, command);
+    expect(rtc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [HUB, false],
+    [CAMERA, true],
   ])("routes %s through RTC with the station's serial and admin id", async (sn, attached) => {
     const { internals, rtc, p2p } = fixture();
     await internals.routeCommand(sn, command);

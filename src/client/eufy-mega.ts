@@ -1115,7 +1115,7 @@ export class EufyMega extends EventEmitter {
    * The `eufy_life` DP writes (smart lights) are secure-MQTT-only. `aiot-dp` routes to either the
    * Anker AIoT MQTT stack or the legacy Tuya REST router depending on the device's category
    * (`eufy_home_tuya` → Tuya, everything else → MQTT). The capability layer emits a single `aiot-dp`
-   * kind and stays transport-agnostic; only the facade sees both sides and decides here. A T9000
+   * kind and stays transport-agnostic; only the facade sees both sides and decides here. A T9000 or T8N00
    * station and the devices attached to it go over RTC, with an attached device's command refused
    * unless its channel resolves back to it on the station. Everything else is P2P.
    */
@@ -1140,7 +1140,7 @@ export class EufyMega extends EventEmitter {
     const station = devices.find((d) => d.sn === stationSn);
     const stationRaw = (station?.raw ?? {}) as { device_type?: unknown; member?: { admin_user_id?: unknown } };
     const deviceType = typeof stationRaw.device_type === "number" ? stationRaw.device_type : undefined;
-    if (target && station && isStation9000({ deviceType, model: station.model })) {
+    if (target && station && (isStation9000({ deviceType, model: station.model }) || station.model === "T8N00")) {
       const attached = stationSn !== sn;
       if (attached && this.registry.serialForFrame(stationSn, cmd.channel) !== sn)
         return Promise.reject(new Error("RTC command requires an unambiguous attached-device channel"));
