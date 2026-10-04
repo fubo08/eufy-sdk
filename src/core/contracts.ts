@@ -494,6 +494,8 @@ export type VideoCodec = "h264" | "h265" | "av1";
  * headers promise decodes to no picture at all.
  */
 export interface LiveVideoFrame {
+  /** Source presentation time in milliseconds, when supplied by the transport. */
+  timestampMs?: number;
   /** True on an IDR — a unit a consumer may begin decoding at, never a continuation of an earlier one. */
   keyframe: boolean;
   /**
@@ -566,6 +568,8 @@ export type AudioCodec = "aac-lc" | "aac-eld" | "g711a";
  * device never sent.
  */
 export interface LiveAudioFrame {
+  /** Source presentation time in milliseconds, when supplied by the transport. */
+  timestampMs?: number;
   /** Codec declared in the frame header. */
   codec: AudioCodec;
   /** Elementary-stream bytes (ADTS-framed for the two AAC profiles). */

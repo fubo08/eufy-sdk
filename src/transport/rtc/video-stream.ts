@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import type { LiveAudioFrame } from "../../core/contracts.js";
+import type { LiveAudioFrame, LiveVideoFrame } from "../../core/contracts.js";
 import type { RtcCommandRouterDeps } from "./command-router.js";
 import { RtcSession } from "./session.js";
 import { buildPortalPacket, parsePortalHeader, PORTAL_HEADER_LENGTH } from "./portal-packet.js";
@@ -25,7 +25,21 @@ export function audioPayload(frame: Buffer): LiveAudioFrame | undefined {
   if (size !== frame.length - 32) return;
   const codecs = { 0: "aac-lc", 2: "g711a", 7: "aac-eld" } as const;
   const codec = codecs[frame[21]! as keyof typeof codecs];
-  return codec ? { codec, data: frame.subarray(32) } : undefined;
+  return codec ? { codec, data: frame.subarray(32), timestampMs: Number(frame.readBigUInt64LE(24)) } : undefined;
+}
+
+/** The portal's 22-byte video header retains source timing and frame geometry. */
+export function videoFrame(frame: Buffer): LiveVideoFrame | undefined {
+  const data = videoPayload(frame);
+  if (!data) return;
+  return {
+    data,
+    keyframe: frame[20] === 1,
+    codec: frame[21] === 1 ? "h265" : "h264",
+    width: frame.readUInt16LE(26),
+    height: frame.readUInt16LE(28),
+    timestampMs: Number(frame.readBigUInt64LE(30)),
+  };
 }
 
 /** NVR live requests use the station envelope and an explicit camera list; byte 14 holds streamId. */
@@ -78,7 +92,6 @@ export class RtcVideoStreams {
     channel: number,
     opts?: { signal?: AbortSignal; objectMode?: boolean; sensor?: number; onAudio?: (frame: LiveAudioFrame) => void },
   ): Promise<Readable> {
-    if (opts?.objectMode) throw new Error("RTC video currently supports raw Annex-B output only");
     const sensor = opts?.sensor ?? 1;
     if (sensor !== 0 && sensor !== 1) throw new Error("RTC video sensor must be 0 or 1");
     opts?.signal?.throwIfAborted();
@@ -103,6 +116,7 @@ export class RtcVideoStreams {
       let heartbeat: ReturnType<typeof setInterval> | undefined;
       let deadline: ReturnType<typeof setTimeout>;
       const stream = new Readable({
+        objectMode: opts?.objectMode ?? false,
         read() {},
         destroy(error, done) {
           cleanup(error ?? undefined);
@@ -153,11 +167,11 @@ export class RtcVideoStreams {
         if (!data) return;
         clearTimeout(deadline);
         deadline = setTimeout(() => fail(new Error("rtc video: no video for 15 seconds")), 15_000);
-        if (stream.readableLength + data.length > 8 * 1024 * 1024) {
+        if (opts?.objectMode ? stream.readableLength >= 120 : stream.readableLength + data.length > 8 * 1024 * 1024) {
           fail(new Error("rtc video: consumer too slow (8 MiB buffer limit)"));
           return;
         }
-        stream.push(data);
+        stream.push(opts?.objectMode ? videoFrame(frame) : data);
         frames++;
         if (!delivered) {
           delivered = true;
@@ -165,7 +179,7 @@ export class RtcVideoStreams {
             `[rtc:video] first frame, camera channel ${channel}, sensor ${sensor}, ${data.length} bytes`,
           );
           resolve(stream);
-        } else if (frames % 300 === 0) this.deps.logger?.debug(`[rtc:video] channel ${channel}: ${frames} frames`);
+        } else if (frames % 300 === 0) this.deps.logger?.debug(`[rtc:video] channel ${channel}, sensor ${sensor}: ${frames} frames`);
       };
       const onConnected = () => {
         if (stopped || startTimer) return;

@@ -58,10 +58,10 @@ describe("NVR RTC video", () => {
     const h = Buffer.alloc(16);
     h.writeUInt32LE(samples.length);
     const audio = Buffer.concat([buildPortalHeader(1301, 16 + samples.length, 0, 0), h, samples]);
-    expect(audioPayload(audio)).toEqual({ codec: "aac-lc", data: samples });
+    expect(audioPayload(audio)).toEqual({ codec: "aac-lc", data: samples, timestampMs: 0 });
     expect(videoPayload(audio)).toBeUndefined();
     session.emit("commandData", audio, 4);
-    expect(onAudio).toHaveBeenCalledWith({ codec: "aac-lc", data: samples });
+    expect(onAudio).toHaveBeenCalledWith({ codec: "aac-lc", data: samples, timestampMs: 0 });
     expect(audioPayload(audio.subarray(0, -1))).toBeUndefined();
     audio[21] = 99;
     expect(audioPayload(audio)).toBeUndefined();
@@ -157,5 +157,24 @@ describe("NVR RTC video", () => {
     await vi.advanceTimersByTimeAsync(15_251);
     expect(stream.errored?.message).toContain("no video");
     expect(sessions[0]!.isConnected).toBe(false);
+  });
+});
+
+describe("RTC source timestamps", () => {
+  it("preserves timestamped frame metadata in object mode", async () => {
+    const { router, sessions } = fixture();
+    const pending = router.open("T8000P0000000000", "synthetic", 0, { objectMode: true });
+    await vi.advanceTimersByTimeAsync(151);
+    const packet = frame();
+    packet[20] = 1;
+    packet[21] = 1;
+    packet.writeUInt16LE(3840, 26);
+    packet.writeUInt16LE(2160, 28);
+    packet.writeBigUInt64LE(1728000000123n, 30);
+    sessions[0]!.emit("commandData", packet);
+    const stream = await pending;
+    expect(stream.read()).toEqual({ data: nal, keyframe: true, codec: "h265", width: 3840, height: 2160, timestampMs: 1728000000123 });
+    stream.destroy();
+    await vi.advanceTimersByTimeAsync(251);
   });
 });
