@@ -1090,6 +1090,9 @@ export class EufyMega extends EventEmitter {
     const media = this.p2p.mediaProviderFor(sn);
     const device = this.registry.list().find((d) => d.sn === sn);
     const station = this.registry.list().find((d) => d.sn === device?.stationSn);
+    this.opts.logger?.debug(
+      `[media:route] device model=${device?.model ?? "unknown"}, station model=${station?.model ?? "unknown"}, readable=${station?.model === "T8N00" && station.sn !== sn ? "rtc" : "p2p"}`,
+    );
     if (station?.model === "T8N00" && station.sn !== sn) {
       media.openReadable = async (opts) => {
         const current = this.registry.require(sn);
