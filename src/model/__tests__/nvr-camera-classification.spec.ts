@@ -12,6 +12,7 @@ describe("NVR and attached PoE camera classification", () => {
       const codec = classify(record);
       expect(codec).toBe("camera");
       expect(detectCapabilities(record, codec)).toContain("camera");
+      expect(detectCapabilities(record, codec)).toContain("ptz");
     }
   });
   it("keeps the NVR on the station codec", () => {

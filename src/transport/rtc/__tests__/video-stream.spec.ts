@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RtcVideoStreams, videoPayload } from "../video-stream.js";
+import { RtcVideoStreams, videoPayload, audioPayload } from "../video-stream.js";
 import { buildPortalHeader } from "../portal-packet.js";
 import type { RtcSession } from "../session.js";
 
@@ -44,6 +44,38 @@ function fixture() {
 afterEach(() => vi.useRealTimers());
 
 describe("NVR RTC video", () => {
+  it("selects the fixed lens and separates audio from Annex-B video", async () => {
+    const { router, sessions } = fixture();
+    const onAudio = vi.fn();
+    const pending = router.open("T8000P0000000000", "synthetic", 3, { sensor: 0, onAudio });
+    await vi.advanceTimersByTimeAsync(151);
+    const session = sessions[0]!;
+    expect(JSON.parse(session.sent[1]!.subarray(16).toString()).payload).toMatchObject({
+      audio_chn: 3,
+      chn_list: [{ index: 0, chn: 3, sensor: 0 }],
+    });
+    const samples = Buffer.from([0xff, 0xf1, 1, 2, 3]);
+    const h = Buffer.alloc(16);
+    h.writeUInt32LE(samples.length);
+    const audio = Buffer.concat([buildPortalHeader(1301, 16 + samples.length, 0, 0), h, samples]);
+    expect(audioPayload(audio)).toEqual({ codec: "aac-lc", data: samples });
+    expect(videoPayload(audio)).toBeUndefined();
+    session.emit("commandData", audio, 4);
+    expect(onAudio).toHaveBeenCalledWith({ codec: "aac-lc", data: samples });
+    expect(audioPayload(audio.subarray(0, -1))).toBeUndefined();
+    audio[21] = 99;
+    expect(audioPayload(audio)).toBeUndefined();
+    session.emit("commandData", frame(), 4);
+    const stream = await pending;
+    expect(stream.read()).toEqual(nal);
+    router.close();
+    await vi.advanceTimersByTimeAsync(251);
+  });
+  it("rejects invalid sensors before opening a session", async () => {
+    const { router, sessions } = fixture();
+    await expect(router.open("T8000P0000000000", "synthetic", 0, { sensor: 2 })).rejects.toThrow("sensor");
+    expect(sessions).toHaveLength(0);
+  });
   it("extracts video and refuses truncated, mis-sized, non-video and non-Annex-B frames", () => {
     expect(videoPayload(frame())).toEqual(nal);
     expect(videoPayload(frame().subarray(0, 39))).toBeUndefined();

@@ -832,7 +832,14 @@ export interface MediaProvider {
    * The caller owns the Readable's lifetime, and destroying it releases the shared pull.
    */
   openReadable?(
-    opts?: { objectMode?: boolean } & SharedSourceHints & AbortableCall,
+    opts?: {
+      objectMode?: boolean;
+      /** Select a reported optical sensor on transports with per-sensor live video. */
+      sensor?: number;
+      /** Receive encoded audio separately from the raw video Readable. */
+      onAudio?: (frame: LiveAudioFrame) => void;
+    } & SharedSourceHints &
+      AbortableCall,
   ): Promise<import("node:stream").Readable>;
   /**
    * Continuously record the live feed as fragmented-MP4 (CMAF). The caller-owned

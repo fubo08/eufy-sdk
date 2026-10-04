@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import type { LiveAudioFrame } from "../../core/contracts.js";
 import type { RtcCommandRouterDeps } from "./command-router.js";
 import { RtcSession } from "./session.js";
 import { buildPortalPacket, parsePortalHeader, PORTAL_HEADER_LENGTH } from "./portal-packet.js";
@@ -6,7 +7,7 @@ import { buildPortalPacket, parsePortalHeader, PORTAL_HEADER_LENGTH } from "./po
 /** The NVR live frame carries a 22-byte media header before its Annex-B access unit. */
 export function videoPayload(frame: Buffer): Buffer | undefined {
   const header = parsePortalHeader(frame);
-  if (!header || ![1300, 1301, 1303].includes(header.commandId)) return;
+  if (!header || header.commandId !== 1300) return;
   if (header.paramLength !== frame.length - PORTAL_HEADER_LENGTH || header.paramLength < 26) return;
   const length = frame.readUInt32LE(PORTAL_HEADER_LENGTH);
   const data = frame.subarray(PORTAL_HEADER_LENGTH + 22);
@@ -15,8 +16,27 @@ export function videoPayload(frame: Buffer): Buffer | undefined {
   return data;
 }
 
+/** Audio is command 1301, followed by the 16-byte audio header and encoded samples. */
+export function audioPayload(frame: Buffer): LiveAudioFrame | undefined {
+  const header = parsePortalHeader(frame);
+  if (!header || header.commandId !== 1301 || header.paramLength !== frame.length - 16 || header.paramLength <= 16)
+    return;
+  const size = frame.readUInt32LE(16);
+  if (size !== frame.length - 32) return;
+  const codecs = { 0: "aac-lc", 2: "g711a", 7: "aac-eld" } as const;
+  const codec = codecs[frame[21]! as keyof typeof codecs];
+  return codec ? { codec, data: frame.subarray(32) } : undefined;
+}
+
 /** NVR live requests use the station envelope and an explicit camera list; byte 14 holds streamId. */
-export function videoCommand(adminUserId: string, channel: number, cmd: number, segment: number): Buffer {
+export function videoCommand(
+  adminUserId: string,
+  channel: number,
+  cmd: number,
+  segment: number,
+  sensor = 1,
+  audio = false,
+): Buffer {
   const payload =
     cmd === 1103
       ? { channel_info: { array_size: 1, channel_array: [channel] } }
@@ -28,9 +48,9 @@ export function videoCommand(adminUserId: string, channel: number, cmd: number, 
             streamtype: 2,
             key: "",
             msg_id: "",
-            audio_chn: -1,
+            audio_chn: audio ? channel : -1,
             stitch_mode: 1,
-            chn_list: [{ index: 0, chn: channel, sensor: 1 }],
+            chn_list: [{ index: 0, chn: channel, sensor }],
           }
         : {};
   return buildPortalPacket({
@@ -56,9 +76,11 @@ export class RtcVideoStreams {
     stationSn: string,
     adminUserId: string,
     channel: number,
-    opts?: { signal?: AbortSignal; objectMode?: boolean },
+    opts?: { signal?: AbortSignal; objectMode?: boolean; sensor?: number; onAudio?: (frame: LiveAudioFrame) => void },
   ): Promise<Readable> {
     if (opts?.objectMode) throw new Error("RTC video currently supports raw Annex-B output only");
+    const sensor = opts?.sensor ?? 1;
+    if (sensor !== 0 && sensor !== 1) throw new Error("RTC video sensor must be 0 or 1");
     opts?.signal?.throwIfAborted();
     const identity = this.deps.identity();
     if (!identity) throw new Error("rtc video: login() first");
@@ -75,6 +97,8 @@ export class RtcVideoStreams {
       let stopped = false;
       let started = false;
       let frames = 0;
+      let audioFrames = 0;
+      let warnedAudio = false;
       let startTimer: ReturnType<typeof setTimeout> | undefined;
       let heartbeat: ReturnType<typeof setInterval> | undefined;
       let deadline: ReturnType<typeof setTimeout>;
@@ -107,6 +131,24 @@ export class RtcVideoStreams {
       };
       const onData = (frame: Buffer) => {
         if (stopped) return;
+        if (opts?.onAudio && parsePortalHeader(frame)?.commandId === 1301) {
+          const audio = audioPayload(frame);
+          if (audio) {
+            if (++audioFrames === 1)
+              this.deps.logger?.info(`[rtc:audio] first frame, codec=${audio.codec}, ${audio.data.length} bytes`);
+            try {
+              opts.onAudio(audio);
+            } catch (error) {
+              fail(error instanceof Error ? error : new Error(String(error)));
+            }
+          } else if (!warnedAudio) {
+            warnedAudio = true;
+            this.deps.logger?.warn(
+              `[rtc:audio] unsupported frame; total=${frame.length}, codecByte=${frame[21] ?? -1}`,
+            );
+          }
+          return;
+        }
         const data = videoPayload(frame);
         if (!data) return;
         clearTimeout(deadline);
@@ -119,19 +161,23 @@ export class RtcVideoStreams {
         frames++;
         if (!delivered) {
           delivered = true;
-          this.deps.logger?.info(`[rtc:video] first frame, camera channel ${channel}, ${data.length} bytes`);
+          this.deps.logger?.info(
+            `[rtc:video] first frame, camera channel ${channel}, sensor ${sensor}, ${data.length} bytes`,
+          );
           resolve(stream);
         } else if (frames % 300 === 0) this.deps.logger?.debug(`[rtc:video] channel ${channel}: ${frames} frames`);
       };
       const onConnected = () => {
         if (stopped || startTimer) return;
-        this.deps.logger?.info(`[rtc:video] connected; requesting camera channel ${channel}`);
+        this.deps.logger?.info(
+          `[rtc:video] connected; requesting camera channel ${channel}, sensor ${sensor}, audio=${!!opts?.onAudio}`,
+        );
         if (!session.sendCommand(videoCommand(adminUserId, channel, 1103, 1)))
           return fail(new Error("rtc video: parameter request refused"));
         startTimer = setTimeout(() => {
           if (stopped) return;
           started = true;
-          if (!session.sendCommand(videoCommand(adminUserId, channel, 1003, 2)))
+          if (!session.sendCommand(videoCommand(adminUserId, channel, 1003, 2, sensor, !!opts?.onAudio)))
             return fail(new Error("rtc video: start refused"));
           heartbeat = setInterval(() => {
             if (!session.sendHeartbeat()) fail(new Error("rtc video: heartbeat refused"));
