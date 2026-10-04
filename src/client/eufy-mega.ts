@@ -365,6 +365,7 @@ export class EufyMega extends EventEmitter {
       onError: (e) => this.reportError(e),
     });
     this.rtcVideo = new RtcVideoStreams({
+      iceTransportPolicy: opts.rtcVideoIcePolicy,
       identity: () => this.mega.rtcIdentity(),
       shard: () => this.mega.rtcShard,
       country: opts.countryCode,

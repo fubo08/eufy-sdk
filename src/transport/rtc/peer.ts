@@ -7,7 +7,7 @@
  * then audio, idr, video, notify, download). Every one carries PTCS-framed portal packets; which logical
  * channel a reassembled frame belongs to is the PTCS header's channel, not the data channel it rode on.
  *
- * ICE is relay-only. The hub grants a TURN allocation in its `scall 100` reply and completes DTLS only
+ * ICE defaults to relay-only; direct selection is experimental. The T9000 observation is: The hub grants a TURN allocation in its `scall 100` reply and completes DTLS only
  * over the relay pair; on a host pair ICE connects and the DTLS handshake never completes. The peer
  * plays the DTLS client (`active`) and opens its channels on the client's even SCTP stream ids, which
  * is what the hub pairs with.
@@ -40,6 +40,8 @@ export type NativePeerFactory = (name: string, config: RtcConfig) => PeerConnect
 
 export interface RtcPeerOptions {
   createPeer?: NativePeerFactory;
+  /** All permits direct candidates alongside TURN; relay is the verified default. */
+  iceTransportPolicy?: "relay" | "all";
   logger?: Logger;
 }
 
@@ -134,7 +136,7 @@ export class RtcPeer extends EventEmitter<RtcPeerEvents> {
     const createPeer = this.opts.createPeer ?? (await loadNativePeerFactory());
     const config: RtcConfig = {
       iceServers: turnServers(turn),
-      iceTransportPolicy: "relay",
+      iceTransportPolicy: this.opts.iceTransportPolicy ?? "relay",
       maxMessageSize: ANKER_MAX_MESSAGE_SIZE,
       enableIceTcp: true,
     };
@@ -160,6 +162,7 @@ export class RtcPeer extends EventEmitter<RtcPeerEvents> {
     });
     pc.onStateChange((state) => {
       this.logger.debug(`[rtc] peer state ${state}`);
+      if (state === "connected") this.logSelectedPath();
       this.emit("connectionState", state);
     });
     pc.onDataChannel((dc) => this.wireChannel(dc.getLabel(), dc));
@@ -271,8 +274,23 @@ export class RtcPeer extends EventEmitter<RtcPeerEvents> {
     this.pending.length = 0;
   }
 
+  /** Reports types only, without addresses or TURN credentials. */
+  private logSelectedPath(): void {
+    try {
+      const pair = this.pc?.getSelectedCandidatePair();
+      if (!pair) return;
+      const relay = pair.local.type === "relay" || pair.remote.type === "relay";
+      const known = [pair.local.type, pair.remote.type].every((t) => ["host", "srflx", "prflx", "relay"].includes(t));
+      this.logger.info(
+        `[rtc:path] policy=${this.opts.iceTransportPolicy ?? "relay"} route=${relay ? "relay" : known ? "direct" : "unknown"} local=${pair.local.type}/${pair.local.transportType} remote=${pair.remote.type}/${pair.remote.transportType}`,
+      );
+    } catch {
+      this.logger.debug("[rtc:path] selected candidate pair unavailable");
+    }
+  }
+
   private acceptsCandidate(candidate: string): boolean {
-    return iceCandidateType(candidate) === "relay";
+    return this.opts.iceTransportPolicy === "all" || iceCandidateType(candidate) === "relay";
   }
 
   private createChannels(): void {
@@ -304,6 +322,7 @@ export class RtcPeer extends EventEmitter<RtcPeerEvents> {
         );
         this.framer = framer;
       }
+      this.logSelectedPath();
       this.commandOpen = true;
       this.emit("commandChannelOpen");
     });

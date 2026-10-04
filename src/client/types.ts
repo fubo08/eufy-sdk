@@ -56,6 +56,8 @@ export interface WaitForRealtimeOptions {
 }
 
 export interface EufyMegaOptions extends MegaClientConfig {
+  /** Experimental media ICE selection. Control sessions remain relay-only. */
+  rtcVideoIcePolicy?: "relay" | "all";
   /** Persist FCM push credentials + seen ids across runs (default: in-memory). */
   pushStore?: FcmStore;
   /** Eagerly retain validated push thumbnails in memory for `camera.snapshotStored()` (default `true`). */

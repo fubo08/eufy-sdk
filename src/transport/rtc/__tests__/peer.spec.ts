@@ -53,6 +53,13 @@ class FakeDc {
 
 /** The slice of `PeerConnection` the peer drives. */
 class FakePc {
+  pair = {
+    local: { type: "host", transportType: "UDP", address: "192.0.2.1" },
+    remote: { type: "relay", transportType: "UDP", address: "203.0.113.1" },
+  };
+  getSelectedCandidatePair() {
+    return this.pair;
+  }
   readonly channels: FakeDc[] = [];
   remote?: { sdp: string; type: string };
   candidates: Array<[string, string]> = [];
@@ -116,10 +123,12 @@ const OFFER = scallJsonToSdp({
 const ANSWER =
   "v=0\r\na=setup:passive\r\na=ice-ufrag:x\r\na=ice-pwd:y\r\na=fingerprint:sha-256 aa:bb\r\na=max-message-size:65536\r\n";
 
-function setup() {
+function setup(iceTransportPolicy?: "relay" | "all", logger?: import("../../../core/logger.js").Logger) {
   let pc!: FakePc;
   let config!: RtcConfig;
   const peer = new RtcPeer({
+    iceTransportPolicy,
+    logger,
     createPeer: (_name, cfg) => {
       config = cfg;
       pc = new FakePc();
@@ -130,6 +139,38 @@ function setup() {
 }
 
 describe("RtcPeer", () => {
+  it("classifies both selected endpoints without logging addresses", async () => {
+    const logger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const { peer, pc } = setup("all", logger);
+    await peer.init(TURN);
+    pc().fireState("connected");
+    expect(logger.info).toHaveBeenLastCalledWith(expect.stringContaining("route=relay"));
+    pc().pair.remote.type = "host";
+    pc().fireState("connected");
+    expect(logger.info).toHaveBeenLastCalledWith(expect.stringContaining("route=direct"));
+    pc().pair.remote.type = "unknown";
+    pc().fireState("connected");
+    expect(logger.info).toHaveBeenLastCalledWith(expect.stringContaining("route=unknown"));
+    expect(JSON.stringify(logger.info.mock.calls)).not.toMatch(/192\.0\.2|203\.0\.113/);
+    peer.close();
+  });
+  it("allows local and remote host candidates with TURN retained in experimental mode", async () => {
+    const { peer, pc, config } = setup("all");
+    const candidates: string[] = [];
+    peer.on("iceCandidate", (c) => candidates.push(c));
+    await peer.init(TURN);
+    expect(config().iceTransportPolicy).toBe("all");
+    expect(config().iceServers).toHaveLength(2);
+    pc().fireLocalCandidate(HOST);
+    pc().fireLocalCandidate(RELAY);
+    peer.addRemoteCandidate(HOST);
+    const answer = peer.handleRemoteOffer(OFFER);
+    pc().fireLocalAnswer(ANSWER);
+    await answer;
+    expect(candidates).toEqual([HOST, RELAY]);
+    expect(pc().candidates.some(([c]) => c === HOST)).toBe(true);
+    peer.close();
+  });
   it("builds a relay-only peer on the hub's TURN grant, with the hub's max message size", async () => {
     const { peer, config } = setup();
     await peer.init({ ...TURN, alt_turn_addr: "t2", alt_turn_port: 3479 });

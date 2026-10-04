@@ -80,7 +80,7 @@ export function videoCommand(
 /** Owns dedicated, bounded video pulls; closing a pull never tears down the command router. */
 export class RtcVideoStreams {
   private readonly active = new Set<Readable>();
-  constructor(private readonly deps: RtcCommandRouterDeps) {}
+  constructor(private readonly deps: RtcCommandRouterDeps & { iceTransportPolicy?: "relay" | "all" }) {}
 
   close(): void {
     for (const stream of this.active) stream.destroy();
@@ -106,6 +106,7 @@ export class RtcVideoStreams {
       country: this.deps.country ?? "US",
       logger: this.deps.logger,
       keepPeerOnSignalingLoss: true,
+      peer: { iceTransportPolicy: this.deps.iceTransportPolicy },
     });
     return new Promise<Readable>((resolve, reject) => {
       let delivered = false;
