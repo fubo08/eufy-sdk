@@ -27,6 +27,8 @@ import { scallJsonToSdp, sdpToScallJson, toWireCandidate } from "./scall-sdp.js"
 import { RtcSignalingClient, type RtcInnerMessage, type RtcSignalingOptions } from "./signaling.js";
 
 export interface RtcSessionOptions extends RtcSignalingOptions {
+  /** Media owners with a stall deadline may retain an established peer after signaling loss. */
+  keepPeerOnSignalingLoss?: boolean;
   peer?: RtcPeerOptions;
   createSignaling?: (opts: RtcSignalingOptions) => RtcSignalingClient;
   createPeer?: (opts: RtcPeerOptions) => RtcPeer;
@@ -82,10 +84,20 @@ export class RtcSession extends EventEmitter<RtcSessionEvents> {
         });
     });
     this.signaling.on("close", () => {
+      if (this.opts.keepPeerOnSignalingLoss && this.connected && !this.closed) {
+        this.logger.warn("[rtc] signaling lost; retaining established media peer until channel close or media stall");
+        return;
+      }
       this.connected = false;
       this.announceClose();
     });
-    this.signaling.on("error", (e) => this.emit("error", e));
+    this.signaling.on("error", (e) => {
+      if (this.opts.keepPeerOnSignalingLoss && this.connected && !this.closed) {
+        this.logger.warn("[rtc] signaling error while media peer is established; waiting for peer/media health");
+        return;
+      }
+      this.emit("error", e);
+    });
 
     this.peer.on("iceCandidate", (c) => this.signaling.sendInfoCandidate(toWireCandidate(c)));
     this.peer.on("iceGatheringComplete", () => this.signaling.sendInfoCandidate(""));

@@ -337,3 +337,28 @@ describe("Fmp4Muxer box structure", () => {
     expect(structuralDefects(fragment.data)).toEqual([]);
   });
 });
+
+describe("continuous live fragments", () => {
+  it("emits video and audio before the next keyframe and marks dependent fragments", () => {
+    const mux = new Fmp4Muxer({ audio: true, fragmentSeconds: 0.25, keyframeAligned: false });
+    mux.pushAudio(audio("aac-lc", Buffer.from([1, 2, 3])), 0);
+    mux.push(kf("h265"), 0);
+    const emitted = [];
+    for (let ms = 100; ms <= 1200; ms += 100) {
+      mux.pushAudio(audio("aac-lc", Buffer.from([1, 2, 3])), ms);
+      const out = mux.push(delta("h265"), ms);
+      if (out?.data.length) emitted.push({ ms, out });
+    }
+    expect(emitted.map((x) => x.ms)).toEqual([300, 600, 900, 1200]);
+    expect(emitted.map((x) => x.out.keyframe)).toEqual([true, false, false, false]);
+    for (const { out } of emitted) expect(structuralDefects(out.data)).toEqual([]);
+    expect(mux.flush()?.keyframe).toBe(false);
+  });
+
+  it("keeps recording fragments keyframe-aligned by default", () => {
+    const mux = new Fmp4Muxer({ fragmentSeconds: 0.25 });
+    mux.push(kf("h264"), 0);
+    for (let ms = 100; ms <= 1200; ms += 100) expect(mux.push(delta("h264"), ms)).toBeUndefined();
+    expect(mux.push(kf("h264"), 1300)?.data.length).toBeGreaterThan(0);
+  });
+});

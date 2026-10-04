@@ -42,10 +42,11 @@ const HUB_SDP = {
   candidate: ["1 1 udp 1 192.0.2.10 1 typ host"],
 };
 
-function setup() {
+function setup(keepPeerOnSignalingLoss = false) {
   const sig = new FakeSignaling();
   const peer = new FakePeer();
   const session = new RtcSession({
+    keepPeerOnSignalingLoss,
     authToken: "T",
     gtoken: "G",
     stationSn: "T9000P0000000001",
@@ -222,5 +223,44 @@ describe("RtcSession", () => {
     s.sig.hub({ action: 3, dataType: "scall", data: { status: 100, turn: TURN } });
     await flush();
     expect(s.errors.map((e) => e.message)).toEqual(["no native module"]);
+  });
+});
+
+describe("media signaling loss", () => {
+  it("retains a connected media peer after socket loss, but closes on peer failure", async () => {
+    const s = await authenticated(setup(true));
+    const closed = vi.fn();
+    const data = vi.fn();
+    s.session.on("close", closed);
+    s.session.on("commandData", data);
+    s.peer.emit("commandChannelOpen");
+    s.sig.emit("error", new Error("socket lost"));
+    s.sig.emit("close", 1006, "");
+    expect(s.errors).toEqual([]);
+    expect(closed).not.toHaveBeenCalled();
+    expect(s.session.isConnected).toBe(true);
+    s.peer.emit("data", Buffer.from([1]), 4);
+    expect(data).toHaveBeenCalledTimes(1);
+    s.peer.emit("connectionState", "failed");
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(s.session.isConnected).toBe(false);
+    s.session.close();
+    expect(s.peer.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retain an unestablished media session or a default command session", async () => {
+    for (const [retain, connected] of [
+      [true, false],
+      [false, true],
+    ]) {
+      const s = await authenticated(setup(retain));
+      const closed = vi.fn();
+      s.session.on("close", closed);
+      if (connected) s.peer.emit("commandChannelOpen");
+      s.sig.emit("close", 1006, "");
+      expect(closed).toHaveBeenCalledTimes(1);
+      expect(s.session.isConnected).toBe(false);
+      s.session.close();
+    }
   });
 });

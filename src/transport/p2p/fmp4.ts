@@ -29,6 +29,8 @@ const DEFAULT_FRAME_TICKS = TIMESCALE / 15; // fallback per-sample duration (~15
 export interface Fmp4Options {
   /** Minimum fragment length; a new fragment opens on the first keyframe past this (default 2s). */
   fragmentSeconds?: number;
+  /** False for a continuous live pipe: emit at the duration boundary, even between keyframes. */
+  keyframeAligned?: boolean;
   /** Assumed fps for the first sample's duration before inter-frame timing is known (default 15). */
   fps?: number;
   /** Include an AAC track when the source declares AAC-LC or AAC-ELD before the first media fragment. */
@@ -74,10 +76,12 @@ export class Fmp4Muxer {
   private timelineOriginMs?: number;
   private timelineAligned = false;
   private readonly fragmentTicks: number;
+  private readonly keyframeAligned: boolean;
   private readonly firstDuration: number;
 
   constructor(opts: Fmp4Options = {}) {
     this.fragmentTicks = (opts.fragmentSeconds ?? 2) * TIMESCALE;
+    this.keyframeAligned = opts.keyframeAligned ?? true;
     this.firstDuration = opts.fps ? TIMESCALE / opts.fps : DEFAULT_FRAME_TICKS;
     this.audioRequested = opts.audio ?? false;
   }
@@ -114,13 +118,15 @@ export class Fmp4Muxer {
     this.lastVideoTimestampMs = timestampMs;
 
     let fragment: Buffer | undefined;
+    let fragmentKeyframe = false;
     // Boundary: a keyframe that opens a fragment past the minimum length closes the current one first.
-    if (frame.keyframe && this.samples.length > 0 && this.fragTicks >= this.fragmentTicks) {
+    if ((!this.keyframeAligned || frame.keyframe) && this.samples.length > 0 && this.fragTicks >= this.fragmentTicks) {
       if (!this.initSent) {
         this.audioDisabled = !this.audioCodec;
         init = this.buildInit();
         this.initSent = true;
       }
+      fragmentKeyframe = this.samplesStartKeyframe();
       fragment = this.buildFragment();
     }
 
@@ -133,7 +139,7 @@ export class Fmp4Muxer {
     }
 
     if (init || fragment) {
-      return { init, data: fragment ?? Buffer.alloc(0), keyframe: !!fragment && this.samplesStartKeyframe() };
+      return { init, data: fragment ?? Buffer.alloc(0), keyframe: fragmentKeyframe };
     }
     return undefined;
   }
@@ -198,8 +204,9 @@ export class Fmp4Muxer {
       init = this.buildInit();
       this.initSent = true;
     }
+    const keyframe = this.samplesStartKeyframe();
     const data = this.buildFragment();
-    return { init, data, keyframe: true };
+    return { init, data, keyframe };
   }
 
   private samplesStartKeyframe(): boolean {

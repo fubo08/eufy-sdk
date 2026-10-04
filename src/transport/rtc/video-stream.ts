@@ -104,6 +104,7 @@ export class RtcVideoStreams {
       shard: this.deps.shard(),
       country: this.deps.country ?? "US",
       logger: this.deps.logger,
+      keepPeerOnSignalingLoss: true,
     });
     return new Promise<Readable>((resolve, reject) => {
       let delivered = false;
@@ -179,7 +180,8 @@ export class RtcVideoStreams {
             `[rtc:video] first frame, camera channel ${channel}, sensor ${sensor}, ${data.length} bytes`,
           );
           resolve(stream);
-        } else if (frames % 300 === 0) this.deps.logger?.debug(`[rtc:video] channel ${channel}, sensor ${sensor}: ${frames} frames`);
+        } else if (frames % 300 === 0)
+          this.deps.logger?.debug(`[rtc:video] channel ${channel}, sensor ${sensor}: ${frames} frames`);
       };
       const onConnected = () => {
         if (stopped || startTimer) return;
