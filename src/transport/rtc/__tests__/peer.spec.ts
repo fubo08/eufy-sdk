@@ -294,4 +294,22 @@ describe("RtcPeer", () => {
     pc().fireLocalAnswer(ANSWER);
     await first;
   });
+
+  it("sends media heartbeat raw on the command channel, without PTCS wrapping", async () => {
+    const { peer, pc } = setup();
+    expect(peer.sendHeartbeat()).toBe(false);
+    await peer.init(TURN);
+    const answer = peer.handleRemoteOffer(OFFER);
+    pc().fireLocalAnswer(ANSWER);
+    await answer;
+    const cmd = pc().channels.find((c) => c.label === COMMAND_CHANNEL)!;
+    cmd.fireOpen();
+    expect(peer.sendHeartbeat()).toBe(true);
+    expect(cmd.sent.at(-1)?.toString("hex")).toBe(
+      "0009000010000000000000006300000000000000585a5948730400000000000000000002",
+    );
+    cmd.sendResult = false;
+    expect(peer.sendHeartbeat()).toBe(false);
+    peer.close();
+  });
 });

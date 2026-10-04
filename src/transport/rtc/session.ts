@@ -129,6 +129,11 @@ export class RtcSession extends EventEmitter<RtcSessionEvents> {
     return this.peer.sendCommand(portalPacket);
   }
 
+  /** Keep an active media session alive using the portal's raw heartbeat. */
+  sendHeartbeat(): boolean {
+    return this.peer.sendHeartbeat();
+  }
+
   /** Hang up and tear both sides down; `close` fires once, here if nothing announced it before. */
   close(): void {
     if (this.closed) return;

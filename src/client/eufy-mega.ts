@@ -27,6 +27,7 @@ import { VacuumMapStore } from "../model/index.js";
 import { type P2PSession, type P2PFrame } from "../transport/p2p/p2p-session.js";
 import { P2PCommandRouter } from "../transport/p2p/command-router.js";
 import { RtcCommandRouter } from "../transport/rtc/command-router.js";
+import { RtcVideoStreams } from "../transport/rtc/video-stream.js";
 import { jpegGeometry } from "../transport/p2p/media.js";
 import type { PowerTier } from "../transport/p2p/session-manager.js";
 import { MqttCommandRouter } from "../transport/mqtt/command-router.js";
@@ -288,6 +289,7 @@ export class EufyMega extends EventEmitter {
   private readonly p2p: P2PCommandRouter;
   /** Transport-side owner of the T9000 station sessions (sibling of {@link p2p}). */
   private readonly rtc: RtcCommandRouter;
+  private readonly rtcVideo: RtcVideoStreams;
   /** Transport-side owner of the secure-MQTT ff09 lock/garage command path (sibling of {@link p2p}). */
   private readonly mqtt: MqttCommandRouter;
   /** Transport-side owner of the legacy Tuya REST command path for non-AIoT vacuums (G-series). */
@@ -361,6 +363,12 @@ export class EufyMega extends EventEmitter {
       country: opts.countryCode,
       logger: opts.logger,
       onError: (e) => this.reportError(e),
+    });
+    this.rtcVideo = new RtcVideoStreams({
+      identity: () => this.mega.rtcIdentity(),
+      shard: () => this.mega.rtcShard,
+      country: opts.countryCode,
+      logger: opts.logger,
     });
     this.mqtt = new MqttCommandRouter({
       mega: this.mega,
@@ -1080,6 +1088,29 @@ export class EufyMega extends EventEmitter {
    */
   private mediaProviderFor(sn: string): MediaProvider {
     const media = this.p2p.mediaProviderFor(sn);
+    const device = this.registry.list().find((d) => d.sn === sn);
+    const station = this.registry.list().find((d) => d.sn === device?.stationSn);
+    if (station?.model === "T8N00" && station.sn !== sn) {
+      media.openReadable = async (opts) => {
+        const current = this.registry.require(sn);
+        const raw = current.raw as { device_channel?: unknown };
+        const channel = raw?.device_channel;
+        if (
+          typeof channel !== "number" ||
+          !Number.isInteger(channel) ||
+          channel < 0 ||
+          channel > 254 ||
+          this.registry.serialForFrame(station.sn, channel) !== sn
+        ) {
+          throw new Error("RTC video requires an unambiguous attached-device channel");
+        }
+        const stationRaw = this.registry.require(station.sn).raw as { member?: { admin_user_id?: unknown } };
+        const member = stationRaw?.member?.admin_user_id;
+        const admin = (typeof member === "string" && member) || this.mega.rtcIdentity()?.userId;
+        if (!admin) throw new Error("rtc video: login() first");
+        return this.rtcVideo.open(station.sn, admin, channel, opts);
+      };
+    }
     const cache = this.storedImages;
     if (!cache) return media;
     const retainedStill = () => {
@@ -2291,6 +2322,7 @@ export class EufyMega extends EventEmitter {
     this.lastStateAnnounced.clear();
     await this.closeMqttTransports();
     this.rtc.close();
+    this.rtcVideo.close();
     await this.p2p.closeAll();
     this.pushClient?.close();
     this.pushClient = undefined;

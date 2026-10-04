@@ -233,6 +233,24 @@ export class RtcPeer extends EventEmitter<RtcPeerEvents> {
     return !this.wireSendFailed;
   }
 
+  /** The portal's raw link-99 heartbeat, outside PTCS framing. */
+  sendHeartbeat(): boolean {
+    const dc = this.channels.get(COMMAND_CHANNEL);
+    if (!dc?.isOpen() || !this.commandOpen) return false;
+    const packet = Buffer.alloc(36);
+    packet[1] = 9;
+    packet.writeUInt16LE(16, 4);
+    packet[12] = 99;
+    packet.write("XZYH", 20, "ascii");
+    packet.writeUInt16LE(1139, 24);
+    packet[35] = 2;
+    try {
+      return dc.sendMessageBinary(packet);
+    } catch {
+      return false;
+    }
+  }
+
   /** Tear the peer down. A pending answer is rejected, so a `handleRemoteOffer` in flight settles. */
   close(): void {
     this.framer?.destroy();

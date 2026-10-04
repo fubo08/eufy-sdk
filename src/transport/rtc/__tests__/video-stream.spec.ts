@@ -1,0 +1,129 @@
+import { EventEmitter } from "node:events";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { RtcVideoStreams, videoPayload } from "../video-stream.js";
+import { buildPortalHeader } from "../portal-packet.js";
+import type { RtcSession } from "../session.js";
+
+const nal = Buffer.from([0, 0, 0, 1, 0x40, 1, 2, 3]);
+function frame() {
+  const media = Buffer.alloc(22);
+  media.writeUInt32LE(nal.length);
+  return Buffer.concat([buildPortalHeader(1300, media.length + nal.length, 0, 0), media, nal]);
+}
+class Session extends EventEmitter {
+  isConnected = false;
+  sent: Buffer[] = [];
+  sendHeartbeat = vi.fn(() => true);
+  async connect() {
+    this.isConnected = true;
+    this.emit("connected");
+  }
+  sendCommand(packet: Buffer) {
+    this.sent.push(packet);
+    return true;
+  }
+  close() {
+    this.isConnected = false;
+    this.emit("close");
+  }
+}
+function fixture() {
+  vi.useFakeTimers();
+  const sessions: Session[] = [];
+  const router = new RtcVideoStreams({
+    identity: () => ({ authToken: "synthetic", userId: "synthetic", gtoken: "synthetic" }),
+    shard: () => "eu-pr",
+    createSession: () => {
+      const s = new Session();
+      sessions.push(s);
+      return s as unknown as RtcSession;
+    },
+  });
+  return { router, sessions };
+}
+afterEach(() => vi.useRealTimers());
+
+describe("NVR RTC video", () => {
+  it("extracts video and refuses truncated, mis-sized, non-video and non-Annex-B frames", () => {
+    expect(videoPayload(frame())).toEqual(nal);
+    expect(videoPayload(frame().subarray(0, 39))).toBeUndefined();
+    const bad = frame();
+    bad.writeUInt32LE(999, 16);
+    expect(videoPayload(bad)).toBeUndefined();
+    const control = frame();
+    control.writeUInt16LE(1351, 4);
+    expect(videoPayload(control)).toBeUndefined();
+    const invalidNal = frame();
+    invalidNal[38] = 1;
+    expect(videoPayload(invalidNal)).toBeUndefined();
+  });
+  it("requests the selected camera, waits for video, sends heartbeat and stops on destruction", async () => {
+    const { router, sessions } = fixture();
+    const pending = router.open("T8000P0000000000", "synthetic-admin", 3);
+    await vi.advanceTimersByTimeAsync(151);
+    const session = sessions[0]!;
+    const start = session.sent[1]!;
+    expect(start[14]).toBe(1);
+    expect(JSON.parse(start.subarray(16).toString())).toMatchObject({
+      cmd: 1003,
+      payload: { chn_list: [{ index: 0, chn: 3, sensor: 1 }] },
+    });
+    session.emit("commandData", frame(), 4);
+    const stream = await pending;
+    expect(stream.read()).toEqual(nal);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(session.sendHeartbeat).toHaveBeenCalledOnce();
+    stream.destroy();
+    await vi.advanceTimersByTimeAsync(251);
+    expect(JSON.parse(session.sent.at(-1)!.subarray(16).toString()).cmd).toBe(1004);
+    expect(session.isConnected).toBe(false);
+  });
+  it("times out instead of reporting an open command channel as working video", async () => {
+    const { router, sessions } = fixture();
+    const pending = expect(router.open("T8000P0000000000", "synthetic", 0)).rejects.toThrow("no first frame");
+    await vi.advanceTimersByTimeAsync(25_251);
+    await pending;
+    expect(sessions[0]!.isConnected).toBe(false);
+  });
+  it("aborts an opening stream and releases the session", async () => {
+    const { router, sessions } = fixture();
+    const abort = new AbortController();
+    const pending = expect(router.open("T8000P0000000000", "synthetic", 0, { signal: abort.signal })).rejects.toThrow(
+      "aborted",
+    );
+    await vi.advanceTimersByTimeAsync(1);
+    abort.abort();
+    await pending;
+    expect(sessions[0]!.isConnected).toBe(false);
+  });
+  it("keeps simultaneous camera data isolated and closes all pulls on shutdown", async () => {
+    const { router, sessions } = fixture();
+    const a = router.open("T8000P0000000000", "synthetic", 0);
+    const b = router.open("T8000P0000000000", "synthetic", 1);
+    await vi.advanceTimersByTimeAsync(151);
+    sessions[0]!.emit("commandData", frame(), 4);
+    const sa = await a;
+    expect(sa.read()).toEqual(nal);
+    let secondReady = false;
+    void b.then(() => {
+      secondReady = true;
+    });
+    await Promise.resolve();
+    expect(secondReady).toBe(false);
+    sessions[1]!.emit("commandData", frame(), 4);
+    await b;
+    router.close();
+    await vi.advanceTimersByTimeAsync(251);
+    expect(sessions.every((s) => !s.isConnected)).toBe(true);
+  });
+  it("ends an established stream when video stalls", async () => {
+    const { router, sessions } = fixture();
+    const pending = router.open("T8000P0000000000", "synthetic", 0);
+    await vi.advanceTimersByTimeAsync(151);
+    sessions[0]!.emit("commandData", frame(), 4);
+    const stream = await pending;
+    await vi.advanceTimersByTimeAsync(15_251);
+    expect(stream.errored?.message).toContain("no video");
+    expect(sessions[0]!.isConnected).toBe(false);
+  });
+});
