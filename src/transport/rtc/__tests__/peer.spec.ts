@@ -89,6 +89,12 @@ class FakePc {
   onLocalCandidate(cb: (candidate: string, mid: string) => void): void {
     this.cbs.cand = cb as never;
   }
+  onIceStateChange(cb: (state: string) => void): void {
+    this.cbs.ice = cb as never;
+  }
+  fireIce(state: string): void {
+    (this.cbs.ice as ((s: string) => void) | undefined)?.(state);
+  }
   onStateChange(cb: (state: string) => void): void {
     this.cbs.state = cb as never;
   }
@@ -146,7 +152,8 @@ describe("RtcPeer", () => {
     pc().fireState("connected");
     expect(logger.info).toHaveBeenLastCalledWith(expect.stringContaining("route=relay"));
     pc().pair.remote.type = "host";
-    pc().fireState("connected");
+    pc().fireIce("completed");
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("state=completed"));
     expect(logger.info).toHaveBeenLastCalledWith(expect.stringContaining("route=direct"));
     pc().pair.remote.type = "unknown";
     pc().fireState("connected");

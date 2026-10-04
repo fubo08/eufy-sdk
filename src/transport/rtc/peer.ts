@@ -110,6 +110,8 @@ async function loadNativePeerFactory(): Promise<NativePeerFactory> {
 const ANSWER_TIMEOUT_MS = 15_000;
 
 export class RtcPeer extends EventEmitter<RtcPeerEvents> {
+  private static nextId = 0;
+  private readonly diagnosticId = ++RtcPeer.nextId;
   private pc?: PeerConnection;
   private readonly channels = new Map<string, DataChannel>();
   private framer?: PtcsFramer;
@@ -160,8 +162,14 @@ export class RtcPeer extends EventEmitter<RtcPeerEvents> {
         this.emit("iceGatheringComplete");
       }
     });
+    pc.onIceStateChange((state) => {
+      this.logger.info(
+        `[rtc:ice] peer=${this.diagnosticId} policy=${this.opts.iceTransportPolicy ?? "relay"} state=${state}`,
+      );
+      this.logSelectedPath();
+    });
     pc.onStateChange((state) => {
-      this.logger.debug(`[rtc] peer state ${state}`);
+      this.logger.info(`[rtc] peer state ${state}; peer=${this.diagnosticId}`);
       if (state === "connected") this.logSelectedPath();
       this.emit("connectionState", state);
     });
@@ -256,6 +264,7 @@ export class RtcPeer extends EventEmitter<RtcPeerEvents> {
 
   /** Tear the peer down. A pending answer is rejected, so a `handleRemoteOffer` in flight settles. */
   close(): void {
+    if (this.pc) this.logSelectedPath();
     this.framer?.destroy();
     this.framer = undefined;
     if (this.localAnswer) {
@@ -278,11 +287,16 @@ export class RtcPeer extends EventEmitter<RtcPeerEvents> {
   private logSelectedPath(): void {
     try {
       const pair = this.pc?.getSelectedCandidatePair();
-      if (!pair) return;
+      if (!pair) {
+        this.logger.info(
+          `[rtc:path] peer=${this.diagnosticId} policy=${this.opts.iceTransportPolicy ?? "relay"} route=unselected`,
+        );
+        return;
+      }
       const relay = pair.local.type === "relay" || pair.remote.type === "relay";
       const known = [pair.local.type, pair.remote.type].every((t) => ["host", "srflx", "prflx", "relay"].includes(t));
       this.logger.info(
-        `[rtc:path] policy=${this.opts.iceTransportPolicy ?? "relay"} route=${relay ? "relay" : known ? "direct" : "unknown"} local=${pair.local.type}/${pair.local.transportType} remote=${pair.remote.type}/${pair.remote.transportType}`,
+        `[rtc:path] peer=${this.diagnosticId} policy=${this.opts.iceTransportPolicy ?? "relay"} route=${relay ? "relay" : known ? "direct" : "unknown"} local=${pair.local.type}/${pair.local.transportType} remote=${pair.remote.type}/${pair.remote.transportType}`,
       );
     } catch {
       this.logger.debug("[rtc:path] selected candidate pair unavailable");
