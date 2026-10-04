@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { MediaTiming } from "./media-timing.js";
 import type { LiveAudioFrame, LiveVideoFrame } from "../../core/contracts.js";
 import type { RtcCommandRouterDeps } from "./command-router.js";
 import { RtcSession } from "./session.js";
@@ -112,6 +113,8 @@ export class RtcVideoStreams {
       let started = false;
       let frames = 0;
       let audioFrames = 0;
+      const videoTiming = new MediaTiming();
+      const audioTiming = new MediaTiming();
       let warnedAudio = false;
       let startTimer: ReturnType<typeof setTimeout> | undefined;
       let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -149,6 +152,7 @@ export class RtcVideoStreams {
         if (opts?.onAudio && parsePortalHeader(frame)?.commandId === 1301) {
           const audio = audioPayload(frame);
           if (audio) {
+            audioTiming.observe(audio.timestampMs!, performance.now());
             if (++audioFrames === 1)
               this.deps.logger?.info(`[rtc:audio] first frame, codec=${audio.codec}, ${audio.data.length} bytes`);
             try {
@@ -166,6 +170,7 @@ export class RtcVideoStreams {
         }
         const data = videoPayload(frame);
         if (!data) return;
+        videoTiming.observe(Number(frame.readBigUInt64LE(30)), performance.now());
         clearTimeout(deadline);
         deadline = setTimeout(() => fail(new Error("rtc video: no video for 15 seconds")), 15_000);
         if (opts?.objectMode ? stream.readableLength >= 120 : stream.readableLength + data.length > 8 * 1024 * 1024) {
@@ -180,8 +185,12 @@ export class RtcVideoStreams {
             `[rtc:video] first frame, camera channel ${channel}, sensor ${sensor}, ${data.length} bytes`,
           );
           resolve(stream);
-        } else if (frames % 300 === 0)
+        } else if (frames % 300 === 0) {
           this.deps.logger?.debug(`[rtc:video] channel ${channel}, sensor ${sensor}: ${frames} frames`);
+          this.deps.logger?.info(
+            `[rtc:timing] sensor ${sensor} video=${videoTiming.summary()} audio=${audioTiming.summary()}`,
+          );
+        }
       };
       const onConnected = () => {
         if (stopped || startTimer) return;
