@@ -250,6 +250,21 @@ describe("RtcPeer", () => {
     expect(done).toHaveBeenCalledTimes(1);
   });
 
+  it("uses the native offer's application mid for queued and later ICE candidates", async () => {
+    const { peer, pc } = setup();
+    await peer.init(TURN);
+    peer.addRemoteCandidate(RELAY);
+    const answering = peer.handleRemoteOffer(OFFER.replace("a=mid:2", "a=mid:data"));
+    pc().fireLocalAnswer(ANSWER);
+    await answering;
+    peer.addRemoteCandidate(RELAY);
+    expect(pc().candidates).toEqual([
+      [RELAY, "data"],
+      [RELAY, "data"],
+    ]);
+    peer.close();
+  });
+
   it("opens the command path once the channel opens, sends through the framer, and surfaces inbound frames", async () => {
     const { peer, pc } = setup();
     await peer.init(TURN);

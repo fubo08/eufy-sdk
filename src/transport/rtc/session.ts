@@ -259,7 +259,7 @@ export class RtcSession extends EventEmitter<RtcSessionEvents> {
       offer = sdpText;
     }
     const answer = await this.peer.handleRemoteOffer(offer);
-    this.signaling.sendInfoSdp(JSON.stringify(sdpToScallJson(answer)));
+    this.signaling.sendInfoSdp(this.opts.signalingMode === "call" ? answer : JSON.stringify(sdpToScallJson(answer)));
     this.logger.debug(`[rtc] ${this.opts.stationSn} answered the hub's offer`);
   }
 }

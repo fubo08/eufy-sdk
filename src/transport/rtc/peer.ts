@@ -118,6 +118,7 @@ export class RtcPeer extends EventEmitter<RtcPeerEvents> {
   private readonly wireTally = new Map<string, number>();
   private commandOpen = false;
   private remoteSet = false;
+  private remoteMid = HUB_SDP_MID;
   private handlingOffer = false;
   private channelsCreated = false;
   private gatheringDone = false;
@@ -193,6 +194,8 @@ export class RtcPeer extends EventEmitter<RtcPeerEvents> {
     this.handlingOffer = true;
     try {
       const offer = forceDtlsRole(offerSdp, "passive");
+      const application = offer.split(/(?=^m=)/m).find((section) => section.startsWith("m=application "));
+      this.remoteMid = application?.match(/^a=mid:([^\r\n]+)/m)?.[1] ?? HUB_SDP_MID;
       const answerWait = new Promise<string>((resolve, reject) => {
         const timer = setTimeout(() => {
           this.localAnswer = undefined;
@@ -361,7 +364,7 @@ export class RtcPeer extends EventEmitter<RtcPeerEvents> {
 
   private addNow(candidate: string): void {
     try {
-      this.pc?.addRemoteCandidate(candidate, HUB_SDP_MID);
+      this.pc?.addRemoteCandidate(candidate, this.remoteMid);
     } catch (e) {
       this.logger.warn(`[rtc] addRemoteCandidate failed: ${e instanceof Error ? e.message : String(e)}`);
     }

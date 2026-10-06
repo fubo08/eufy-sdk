@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RtcVideoStreams, videoPayload, audioPayload } from "../video-stream.js";
 import { buildPortalHeader } from "../portal-packet.js";
 import type { RtcSession } from "../session.js";
+import type { RtcSessionOptions } from "../session.js";
 
 const nal = Buffer.from([0, 0, 0, 1, 0x40, 1, 2, 3]);
 function frame() {
@@ -27,23 +28,36 @@ class Session extends EventEmitter {
     this.emit("close");
   }
 }
-function fixture() {
+function fixture(signalingMode?: "call" | "scall") {
   vi.useFakeTimers();
   const sessions: Session[] = [];
+  const options: RtcSessionOptions[] = [];
   const router = new RtcVideoStreams({
+    signalingMode,
     identity: () => ({ authToken: "synthetic", userId: "synthetic", gtoken: "synthetic" }),
     shard: () => "eu-pr",
-    createSession: () => {
+    createSession: (opts) => {
+      options.push(opts);
       const s = new Session();
       sessions.push(s);
       return s as unknown as RtcSession;
     },
   });
-  return { router, sessions };
+  return { router, sessions, options };
 }
 afterEach(() => vi.useRealTimers());
 
 describe("NVR RTC video", () => {
+  it("propagates native signaling to the media session", async () => {
+    const { router, sessions, options } = fixture("call");
+    const pending = router.open("T8000P0000000000", "synthetic", 3);
+    await vi.advanceTimersByTimeAsync(151);
+    expect(options[0]?.signalingMode).toBe("call");
+    sessions[0]!.emit("commandData", frame(), 4);
+    await pending;
+    router.close();
+    await vi.advanceTimersByTimeAsync(251);
+  });
   it("selects the fixed lens and separates audio from Annex-B video", async () => {
     const { router, sessions } = fixture();
     const onAudio = vi.fn();
@@ -173,7 +187,14 @@ describe("RTC source timestamps", () => {
     packet.writeBigUInt64LE(1728000000123n, 30);
     sessions[0]!.emit("commandData", packet);
     const stream = await pending;
-    expect(stream.read()).toEqual({ data: nal, keyframe: true, codec: "h265", width: 3840, height: 2160, timestampMs: 1728000000123 });
+    expect(stream.read()).toEqual({
+      data: nal,
+      keyframe: true,
+      codec: "h265",
+      width: 3840,
+      height: 2160,
+      timestampMs: 1728000000123,
+    });
     stream.destroy();
     await vi.advanceTimersByTimeAsync(251);
   });

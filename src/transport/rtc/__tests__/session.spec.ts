@@ -42,11 +42,12 @@ const HUB_SDP = {
   candidate: ["1 1 udp 1 192.0.2.10 1 typ host"],
 };
 
-function setup(keepPeerOnSignalingLoss = false) {
+function setup(keepPeerOnSignalingLoss = false, signalingMode?: "call" | "scall") {
   const sig = new FakeSignaling();
   const peer = new FakePeer();
   const session = new RtcSession({
     keepPeerOnSignalingLoss,
+    signalingMode,
     authToken: "T",
     gtoken: "G",
     stationSn: "T9000P0000000001",
@@ -72,6 +73,21 @@ async function authenticated(s: ReturnType<typeof setup>) {
 const flush = () => new Promise((r) => setImmediate(r));
 
 describe("RtcSession", () => {
+  it.each(["native", "compact"])("preserves the full native answer in call mode after a %s offer", async (format) => {
+    const s = await authenticated(setup(false, "call"));
+    const native =
+      ANSWER +
+      "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=mid:2\r\na=sctp-port:5000\r\na=max-message-size:262144\r\na=ice-options:trickle\r\n";
+    s.peer.handleRemoteOffer.mockResolvedValue(native);
+    s.sig.hub({ action: 3, dataType: "call", data: { status: 100, turn: TURN } });
+    s.sig.hub({ action: 3, dataType: "info", data: { sdp: format === "native" ? native : JSON.stringify(HUB_SDP) } });
+    await flush();
+    expect(s.peer.handleRemoteOffer).toHaveBeenCalledOnce();
+    if (format === "native") expect(s.peer.handleRemoteOffer).toHaveBeenCalledWith(native);
+    expect(s.sig.sendInfoSdp).toHaveBeenCalledWith(native);
+    expect(s.errors).toEqual([]);
+    s.session.close();
+  });
   it("signs, connects, waits for auth, then calls", async () => {
     const s = setup();
     const connecting = s.session.connect();

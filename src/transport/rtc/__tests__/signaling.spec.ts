@@ -223,6 +223,16 @@ describe("socket handshake", () => {
     expect(JSON.parse(eocInner.data)).toMatchObject({ candidate: "" });
   });
 
+  it("uses native call signaling while retaining channel zero and the account proof", async () => {
+    const { c, sockets } = client({ signalingMode: "call" });
+    const s = await opened(c, sockets);
+    c.sendCall();
+    const inner = JSON.parse(JSON.parse(s.sent[1]!).data);
+    expect(inner).toMatchObject({ dataType: "call", channelId: 0 });
+    expect(JSON.parse(inner.data).account).toBe(sessionAccount(0, "admin-1", 1_790_000_000, "TOKEN"));
+    c.close();
+  });
+
   it("parses the double-encoded envelope and ignores junk", async () => {
     const { c, sockets } = client();
     const s = await opened(c, sockets);
