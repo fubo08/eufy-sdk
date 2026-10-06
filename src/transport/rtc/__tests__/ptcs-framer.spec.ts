@@ -64,6 +64,21 @@ describe("PTCS packetize", () => {
 });
 
 describe("PTCS reassembly", () => {
+  it("keeps overlapping frames with the same clock id apart by sequence", () => {
+    const a = Buffer.alloc(1700, 0xaa);
+    const b = Buffer.alloc(1700, 0xbb);
+    const pa = packetize(a, { frameId: 10, sequence: 40, payloadBytes: 800 });
+    const pb = packetize(b, { frameId: 10, sequence: 41, payloadBytes: 800 });
+    const got: Buffer[] = [];
+    const r = new PtcsReassembler((frame) => got.push(frame));
+    r.push(pa[0]!);
+    r.push(pb[0]!);
+    r.push(pa[1]!);
+    r.push(pb[1]!);
+    r.push(pa[2]!);
+    r.push(pb[2]!);
+    expect(got).toEqual([a, b]);
+  });
   it("rebuilds every recorded frame, on the recorded channel", () => {
     for (const v of VECTORS) {
       const got: Array<[Buffer, number]> = [];

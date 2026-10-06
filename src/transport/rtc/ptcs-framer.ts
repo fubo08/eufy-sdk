@@ -122,7 +122,7 @@ export class PtcsReassembler {
     if (!h) return false;
     const body = packet.subarray(PTCS_HEADER_LENGTH, PTCS_HEADER_LENGTH + h.payloadLength);
     if (body.length !== h.payloadLength) return false;
-    const key = `${h.channel}:${h.frameId}`;
+    const key = `${h.channel}:${h.frameId}:${h.sequence}`;
     const now = this.now();
     let p = this.partials.get(key);
     if (!p) {
