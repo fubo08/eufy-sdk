@@ -28,12 +28,13 @@ class Session extends EventEmitter {
     this.emit("close");
   }
 }
-function fixture(signalingMode?: "call" | "scall") {
+function fixture(signalingMode?: "call" | "scall", startMode?: "prelude" | "direct") {
   vi.useFakeTimers();
   const sessions: Session[] = [];
   const options: RtcSessionOptions[] = [];
   const router = new RtcVideoStreams({
     signalingMode,
+    startMode,
     identity: () => ({ authToken: "synthetic", userId: "synthetic", gtoken: "synthetic" }),
     shard: () => "eu-pr",
     createSession: (opts) => {
@@ -48,6 +49,23 @@ function fixture(signalingMode?: "call" | "scall") {
 afterEach(() => vi.useRealTimers());
 
 describe("NVR RTC video", () => {
+  it("direct start skips the prelude, preserves lens/audio and starts only once", async () => {
+    const { router, sessions } = fixture("call", "direct");
+    const pending = router.open("T8000P0000000000", "synthetic", 3, { sensor: 0, onAudio() {} });
+    await vi.advanceTimersByTimeAsync(1);
+    const session = sessions[0]!;
+    expect(session.sent).toHaveLength(1);
+    expect(JSON.parse(session.sent[0]!.subarray(16).toString())).toMatchObject({
+      cmd: 1003,
+      payload: { audio_chn: 3, chn_list: [{ chn: 3, sensor: 0 }] },
+    });
+    session.emit("connected");
+    expect(session.sent).toHaveLength(1);
+    session.emit("commandData", frame());
+    (await pending).destroy();
+    await vi.advanceTimersByTimeAsync(251);
+    expect(session.isConnected).toBe(false);
+  });
   it("propagates native signaling to the media session", async () => {
     const { router, sessions, options } = fixture("call");
     const pending = router.open("T8000P0000000000", "synthetic", 3);
@@ -123,6 +141,38 @@ describe("NVR RTC video", () => {
     await vi.advanceTimersByTimeAsync(251);
     expect(JSON.parse(session.sent.at(-1)!.subarray(16).toString()).cmd).toBe(1004);
     expect(session.isConnected).toBe(false);
+  });
+  it("rejects a correlated negative start ACK without waiting for the media deadline", async () => {
+    const { router, sessions } = fixture();
+    const pending = expect(router.open("T8000P0000000000", "synthetic", 0)).rejects.toThrow("start rejected (err 7)");
+    await vi.advanceTimersByTimeAsync(151);
+    const body = Buffer.alloc(4);
+    body.writeInt32LE(7);
+    const session = sessions[0]!;
+    session.emit("commandData", Buffer.concat([buildPortalHeader(1350, 4, 255, 2, 1), body]), 1);
+    await pending;
+    await vi.advanceTimersByTimeAsync(251);
+    expect(session.isConnected).toBe(false);
+    expect(session.listenerCount("commandData")).toBe(0);
+    expect(session.listenerCount("error")).toBe(0);
+  });
+  it("ignores unrelated ACKs and keeps another camera alive when a pull closes", async () => {
+    const { router, sessions } = fixture();
+    const a = router.open("T8000P0000000000", "synthetic", 0);
+    const b = router.open("T8000P0000000000", "synthetic", 1);
+    await vi.advanceTimersByTimeAsync(151);
+    const body = Buffer.alloc(4);
+    body.writeInt32LE(7);
+    sessions[0]!.emit("commandData", Buffer.concat([buildPortalHeader(1350, 4, 255, 1, 1), body]), 1);
+    sessions[0]!.emit("commandData", frame(), 4);
+    sessions[1]!.emit("commandData", frame(), 4);
+    (await a).destroy();
+    await vi.advanceTimersByTimeAsync(251);
+    expect(sessions[1]!.isConnected).toBe(true);
+    const remaining = await b;
+    expect(remaining.destroyed).toBe(false);
+    router.close();
+    await vi.advanceTimersByTimeAsync(251);
   });
   it("times out instead of reporting an open command channel as working video", async () => {
     const { router, sessions } = fixture();

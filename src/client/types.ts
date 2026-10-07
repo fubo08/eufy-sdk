@@ -60,6 +60,8 @@ export interface EufyMegaOptions extends MegaClientConfig {
   rtcVideoIcePolicy?: "relay" | "all";
   /** Experimental video signaling; native `call` preserves the full SDP answer. Default: `scall`. */
   rtcVideoSignalingMode?: "call" | "scall";
+  /** Experimental NVR start sequence; defaults to the parameter prelude. */
+  rtcVideoStartMode?: "prelude" | "direct";
   /** Persist FCM push credentials + seen ids across runs (default: in-memory). */
   pushStore?: FcmStore;
   /** Eagerly retain validated push thumbnails in memory for `camera.snapshotStored()` (default `true`). */

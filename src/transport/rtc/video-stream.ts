@@ -3,7 +3,13 @@ import { MediaTiming } from "./media-timing.js";
 import type { LiveAudioFrame, LiveVideoFrame } from "../../core/contracts.js";
 import type { RtcCommandRouterDeps } from "./command-router.js";
 import { RtcSession } from "./session.js";
-import { buildPortalPacket, parsePortalHeader, PORTAL_HEADER_LENGTH } from "./portal-packet.js";
+import {
+  buildPortalPacket,
+  parsePortalHeader,
+  parsePortalPacket,
+  PortalLinkType,
+  PORTAL_HEADER_LENGTH,
+} from "./portal-packet.js";
 
 /** The NVR live frame carries a 22-byte media header before its Annex-B access unit. */
 export function videoPayload(frame: Buffer): Buffer | undefined {
@@ -84,6 +90,7 @@ export class RtcVideoStreams {
     private readonly deps: RtcCommandRouterDeps & {
       iceTransportPolicy?: "relay" | "all";
       signalingMode?: "call" | "scall";
+      startMode?: "prelude" | "direct";
     },
   ) {}
 
@@ -134,7 +141,9 @@ export class RtcVideoStreams {
           done(error);
         },
       });
-      const fail = (error: Error) => stream.destroy(error);
+      const fail = (error: Error) => {
+        if (!stopped) stream.destroy(error);
+      };
       const onClose = () => fail(new Error("rtc video: session closed"));
       const onAbort = () => fail(new Error("rtc video: aborted"));
       const cleanup = (error?: Error) => {
@@ -151,11 +160,34 @@ export class RtcVideoStreams {
         if (!delivered) reject(error ?? new Error("rtc video: stopped before first frame"));
         if (started && session.isConnected) {
           session.sendCommand(videoCommand(adminUserId, channel, 1004, 3));
-          setTimeout(() => session.close(), 250).unref();
-        } else session.close();
+          setTimeout(() => {
+            session.close();
+            session.off("error", fail);
+          }, 250).unref();
+        } else {
+          session.close();
+          session.off("error", fail);
+        }
       };
-      const onData = (frame: Buffer) => {
+      const onData = (frame: Buffer, linkType: number = PortalLinkType.COMMAND) => {
         if (stopped) return;
+        const header = parsePortalHeader(frame);
+        if (
+          started &&
+          header?.commandId === 1350 &&
+          header.segment === 2 &&
+          header.channel === 255 &&
+          header.isResponse === 1 &&
+          header.paramLength >= 4 &&
+          frame.length >= PORTAL_HEADER_LENGTH + header.paramLength &&
+          linkType === PortalLinkType.COMMAND
+        ) {
+          const response = parsePortalPacket(frame, linkType);
+          if (response?.errCode !== undefined && response.errCode !== 0) {
+            fail(new Error(`rtc video: start rejected (err ${response.errCode})`));
+            return;
+          }
+        }
         if (opts?.onAudio && parsePortalHeader(frame)?.commandId === 1301) {
           const audio = audioPayload(frame);
           if (audio) {
@@ -200,13 +232,11 @@ export class RtcVideoStreams {
         }
       };
       const onConnected = () => {
-        if (stopped || startTimer) return;
+        if (stopped || started || startTimer) return;
         this.deps.logger?.info(
           `[rtc:video] connected; requesting camera channel ${channel}, sensor ${sensor}, audio=${!!opts?.onAudio}`,
         );
-        if (!session.sendCommand(videoCommand(adminUserId, channel, 1103, 1)))
-          return fail(new Error("rtc video: parameter request refused"));
-        startTimer = setTimeout(() => {
+        const start = () => {
           if (stopped) return;
           started = true;
           if (!session.sendCommand(videoCommand(adminUserId, channel, 1003, 2, sensor, !!opts?.onAudio)))
@@ -214,7 +244,14 @@ export class RtcVideoStreams {
           heartbeat = setInterval(() => {
             if (!session.sendHeartbeat()) fail(new Error("rtc video: heartbeat refused"));
           }, 10_000);
-        }, 150);
+        };
+        this.deps.logger?.info(`[rtc:video] start mode=${this.deps.startMode ?? "prelude"}`);
+        if (this.deps.startMode === "direct") start();
+        else {
+          if (!session.sendCommand(videoCommand(adminUserId, channel, 1103, 1)))
+            return fail(new Error("rtc video: parameter request refused"));
+          startTimer = setTimeout(start, 150);
+        }
       };
       stream.on("error", () => {});
       this.active.add(stream);
