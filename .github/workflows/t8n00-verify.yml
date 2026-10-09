@@ -14,5 +14,9 @@ jobs:
           node-version: 24.5.0
           cache: npm
       - run: npm ci
-      - run: npm install --no-save --package-lock=false --ignore-scripts node-datachannel@0.33.4
+      - name: Supply the optional RTC peer for type checking
+        run: |
+          npm pack node-datachannel@0.33.4 --pack-destination "$RUNNER_TEMP"
+          mkdir -p node_modules/node-datachannel
+          tar -xzf "$RUNNER_TEMP/node-datachannel-0.33.4.tgz" -C node_modules/node-datachannel --strip-components=1
       - run: npm run verify
