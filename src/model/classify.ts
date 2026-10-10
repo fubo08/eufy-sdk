@@ -177,7 +177,6 @@ function isKnownSecurityType(deviceType: number): boolean {
  *  - `T80xx` / `T8001` / `T8002` / `T8010` / `T8030` / `T8023` / `T8025` → **station**
  *    (HomeBase / HomeBase 2 / 3 / Mini), `T9000` (the app's own model registry files it as family
  *    `STATION_9000`, the one station family outside the T8 band), and `T8N00` (NVR) → station.
- *  - `T8E00` (PoE Bullet PTZ Cam S4) → **camera**.
  *  - `T89xx` (entry/motion/water/siren sensors, e.g. T8900/T8910/T8920) → **sensor**.
  *  - `T87xx` keypad (`T8960`) → **keypad**.
  *  - any other `T8…` security T-code → **camera** (the default security family).
@@ -206,8 +205,7 @@ export function codecFromModel(model: string | undefined): Codec | undefined {
   // Stations / hubs / NVRs.
   //  HomeBase family: T8001/T8002/T8010/T8023/T8025/T8030 ; NVR: T8N00.
   if (/^T8(00[0-9]|010|023|025|030)/.test(m)) return "station";
-  if (m === "T8E00") return "camera";
-  if (/^T8N0/.test(m) || /^T8E0/.test(m)) return "station";
+  if (/^T8N0/.test(m)) return "station";
   if (/^T9000/.test(m)) return "station";
 
   // SmartSafe (T74xx) — lock-family actuation.
