@@ -147,6 +147,13 @@ describe("resolveDevice — 3-tier composition", () => {
     expect(resolveDevice({ deviceType: 46 }).capabilities).not.toContain("ptz");
   });
 
+  it.each([undefined, DeviceType.CAMERA_POE_S4])(
+    "recognizes PoE S4 pan-tilt without reported preset parameters (device type %s)",
+    (deviceType) => {
+      expect(resolveDevice({ model: "T8E00", deviceType, params: {} }).capabilities).toContain("ptz");
+    },
+  );
+
   it("a normal solar cam (T8124R) is NOT pan-tilt — the mistaken model hint is gone", () => {
     // T8124R (deviceType 62 = SOLO_CAMERA_SPOTLIGHT_SOLAR) is a FIXED solar cam: it reports no PT param
     // and isn't a PT deviceType. An unfounded `\bT8124R\b` model hint used to grant it ptz anyway;
