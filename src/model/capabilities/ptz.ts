@@ -504,7 +504,7 @@ export const PTZ: CapabilityModule = {
       // no PTZ capability without this, on a real owned unit.
       DeviceType.FLOODLIGHT_CAMERA_8425,
     ],
-    modelHints: [/pan.?tilt|\bpt\b|S3[45]0|indoor.?pt/i, /^T8E00$/i],
+    modelHints: [/pan.?tilt|\bpt\b|S3[45]0|indoor.?pt/i, /\bT8E00\b/i],
   },
   emits: ["ptzNotify"],
   /**

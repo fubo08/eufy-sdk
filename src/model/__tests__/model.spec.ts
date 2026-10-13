@@ -150,7 +150,9 @@ describe("resolveDevice — 3-tier composition", () => {
   it.each([undefined, DeviceType.CAMERA_POE_S4])(
     "recognizes PoE S4 pan-tilt without reported preset parameters (device type %s)",
     (deviceType) => {
-      expect(resolveDevice({ model: "T8E00", deviceType, params: {} }).capabilities).toContain("ptz");
+      expect(
+        resolveDevice({ model: "T8E00", category: "eufy_security", deviceType, params: {} }).capabilities,
+      ).toContain("ptz");
     },
   );
 
