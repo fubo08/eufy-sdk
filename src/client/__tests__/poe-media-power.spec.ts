@@ -5,6 +5,7 @@ import type { MediaProvider } from "../../core/contracts.js";
 
 afterEach(() => vi.restoreAllMocks());
 
+/** Preserves record resolution and capability composition, replacing only the media transport boundary. */
 describe("PoE media power through the public device API", () => {
   it.each([
     ["T8E00", "Synthetic PoE Bullet PTZ Cam S4"],
@@ -16,7 +17,11 @@ describe("PoE media power through the public device API", () => {
       autoRealtime: false,
       pollMs: 0,
     });
-    const internals = client as any;
+    const internals = client as unknown as {
+      registry: { devices: EufyDevice[] };
+      mega: { getDeviceParamList: (...args: unknown[]) => Promise<{ params: unknown[] }> };
+      rtcMediaFor: (sn: string) => MediaProvider | undefined;
+    };
     const hub = "T8N00P0000000000",
       sn = `${model}P0000000001`;
     internals.registry.devices = [
@@ -57,7 +62,6 @@ describe("PoE media power through the public device API", () => {
       },
       record: async () => Buffer.alloc(0),
     };
-    // Replace only the transport boundary; preserve record resolution and capability composition.
     vi.spyOn(internals, "rtcMediaFor").mockReturnValue(media);
     const device = await client.getDevice(sn);
     await device.camera!()!.live!();
