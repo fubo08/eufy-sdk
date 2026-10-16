@@ -1,0 +1,34 @@
+name: PoE power regression evidence
+on:
+  push:
+    branches: [test/poe-camera-power-current]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.5.0
+          cache: npm
+      - run: npm ci
+      - name: Reproduce public camera power classification on current beta
+        shell: bash
+        run: |
+          cp src/model/capabilities/battery.ts /tmp/battery-fixed.ts
+          trap 'cp /tmp/battery-fixed.ts src/model/capabilities/battery.ts' EXIT
+          git show 4e7f77649af324ae7c522c86c3dce3dda4f357ac:src/model/capabilities/battery.ts > src/model/capabilities/battery.ts
+          set +e
+          npx vitest run src/client/__tests__/poe-media-power.spec.ts > /tmp/poe-before.log 2>&1
+          result=$?
+          set -e
+          cat /tmp/poe-before.log
+          test "$result" -eq 1
+          grep -q '2 failed' /tmp/poe-before.log
+          grep -q 'battery' /tmp/poe-before.log
+      - name: Full verification after the fix
+        run: npm run verify
