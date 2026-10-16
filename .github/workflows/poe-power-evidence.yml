@@ -16,14 +16,14 @@ jobs:
           node-version: 24.5.0
           cache: npm
       - run: npm ci
-      - name: Reproduce public camera power classification on current beta
+      - name: Reproduce PoE classification and cell-gate regression on beta
         shell: bash
         run: |
           cp src/model/capabilities/battery.ts /tmp/battery-fixed.ts
           trap 'cp /tmp/battery-fixed.ts src/model/capabilities/battery.ts' EXIT
           git show 4e7f77649af324ae7c522c86c3dce3dda4f357ac:src/model/capabilities/battery.ts > src/model/capabilities/battery.ts
           set +e
-          npx vitest run src/client/__tests__/poe-media-power.spec.ts > /tmp/poe-before.log 2>&1
+          npx vitest run src/model/capabilities/__tests__/mains-camera-power.spec.ts > /tmp/poe-before.log 2>&1
           result=$?
           set -e
           cat /tmp/poe-before.log
