@@ -1,0 +1,34 @@
+name: NVR media regression evidence
+on:
+  push:
+    branches: [test/nvr-media-beta39]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.5.0
+          cache: npm
+      - run: npm ci
+      - name: Reproduce the public caller failure on beta.39
+        shell: bash
+        run: |
+          cp src/client/eufy-mega.ts /tmp/eufy-mega-fixed.ts
+          trap 'cp /tmp/eufy-mega-fixed.ts src/client/eufy-mega.ts' EXIT
+          git show 23cc95573b9761572f6df4e442ee6fe89b0f979c:src/client/eufy-mega.ts > src/client/eufy-mega.ts
+          set +e
+          npx vitest run src/client/__tests__/nvr-media-routing.spec.ts -t 'binds' > /tmp/nvr-before.log 2>&1
+          result=$?
+          set -e
+          cat /tmp/nvr-before.log
+          test "$result" -eq 1
+          grep -q 'mediaProviderFor' /tmp/nvr-before.log
+          grep -q '2 failed' /tmp/nvr-before.log
+      - name: Full verification after the fix
+        run: npm run verify
