@@ -247,6 +247,54 @@ export class RtcCommandRouter {
     };
   }
 
+  /** NVR media uses a dedicated call per camera, independent of station commands. */
+  nvrMediaProviderFor(route: RtcLiveRoute, sensor: 0 | 1): MediaProvider {
+    const key = `${route.stationSn}:${route.cameraSn}:${route.channel}`;
+    const sourceFor = (opts: SharedSourceHints & AbortableCall = {}): SharedLiveSource => {
+      opts.signal?.throwIfAborted();
+      if (!this.deps.identity()) throw new Error("rtc: not logged in");
+      let source = this.callSources.get(key);
+      if (!source) {
+        source = new SharedLiveSource({
+          makeStream: () => {
+            const identity = this.deps.identity();
+            if (!identity) throw new Error("rtc: not logged in");
+            const accountId = route.adminUserId || identity.userId;
+            return new RtcLiveStream({
+              session: this.newSession(route, accountId, identity),
+              seg: new SegmentCounter(),
+              stationSn: route.stationSn,
+              channel: route.channel,
+              accountId,
+              logger: this.deps.logger,
+              nvr: { sensor },
+            });
+          },
+          label: key,
+          logger: this.deps.logger,
+          powered: opts.powered,
+          preBufferSeconds: opts.preBufferSeconds,
+          warmTimeoutMs: 25_000,
+        });
+        this.callSources.set(key, source);
+      }
+      return source;
+    };
+    return {
+      live: async (opts) => attachUnlessAborted(sourceFor(opts), opts?.signal),
+      openReadable: async (opts) => openReadableFromConsumer(attachUnlessAborted(sourceFor(opts), opts?.signal), opts),
+      snapshotLive: async (opts) =>
+        captureSnapshotFromShared(sourceFor(opts), {
+          ...opts,
+          logger: this.deps.logger,
+          ffmpegPath: this.deps.ffmpegPath,
+        }),
+      record: async () => {
+        throw new Error("record is not available over an NVR portal call");
+      },
+    };
+  }
+
   /**
    * Tear down every station session (logout / shutdown). Each live source is disposed before its session
    * closes, so its consumers end cleanly and its stop still rides the session.

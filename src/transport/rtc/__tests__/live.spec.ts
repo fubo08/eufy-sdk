@@ -49,8 +49,12 @@ const media = (body: Buffer, channel = 101) =>
   Buffer.concat([buildPortalHeader(1300, body.length, channel, 0, 0), body]);
 
 describe("parseMediaBody", () => {
+  it("reports the H.264 codec from stream type zero", () => {
+    const h264 = Buffer.from("00000001658884", "hex");
+    expect(parseMediaBody(mediaBody(h264, 0))).toEqual({ data: h264, width: 1920, height: 1080, codec: "h264" });
+  });
   it("takes the declared video after the 22-byte header and the size from it", () => {
-    expect(parseMediaBody(mediaBody(IDR))).toEqual({ data: IDR, width: 1920, height: 1080 });
+    expect(parseMediaBody(mediaBody(IDR))).toEqual({ data: IDR, width: 1920, height: 1080, codec: "h265" });
   });
 
   it("keeps a header whose length bytes read like a start code out of the video", () => {
