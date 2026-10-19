@@ -56,6 +56,19 @@ Worth knowing:
 - `record()` opens its own pull instead of joining the shared source, so it costs a second stream on a
   camera that is already streaming. `recordFragments()` is a shared consumer like everything else.
 
+## T8N00 PoE cameras
+
+T8E00 and T8P00 cameras attached to a T8N00 use independent portal calls for media.
+Both cameras use portal sensor 0. Public lens
+selection is not part of this path. Repeated consumers of one camera share a source;
+different cameras have separate sessions, independent of station commands.
+
+`live()` delivers H.265 video and AAC-LC or G.711 A-law audio.
+`openReadable()` provides video, and `snapshotLive()` joins the same source for a fresh still.
+Recording and talkback are not implemented for this route. The call uses ICE `all`,
+which permits direct and relay candidates without guaranteeing a local connection.
+Signaling loss closes the session; a new consumer can start a fresh call.
+
 ## 1. Event stream (low-level)
 
 The direct escape hatch — raw frames as they arrive.
@@ -561,7 +574,7 @@ session idle-detaches so a battery device sleeps — see [Connectivity & battery
 
 | Need                                | Use                                                                         |
 | ----------------------------------- | --------------------------------------------------------------------------- |
-| Raw frames, custom pipeline         | `cam.live()` → `on("video"/"audio")`                                        |
+| Raw frames, custom pipeline         | `cam.live()` → `on("video"/"audio")`                                      |
 | Pipe bytes to a file/socket/encoder | `cam.openReadable()`                                                        |
 | Serve HLS / feed an MSE player      | `cam.recordFragments()`                                                     |
 | A single still                      | `cam.snapshotLive()` (fresh) or `cam.snapshotStored()` (retained push JPEG) |

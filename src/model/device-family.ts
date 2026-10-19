@@ -160,3 +160,6 @@ export const isAiotVacuum = (ctx: FamilyContext): boolean => ctx.category !== "e
  * vacuums receive the same write actions as AIoT ones, routed by the facade's `routeCommand`.
  */
 export const isTuyaVacuum = (ctx: FamilyContext): boolean => ctx.category === "eufy_home_tuya";
+
+/** PoE cameras whose media is served by their NVR's portal call. */
+export const isNvrMediaCamera = (ctx: FamilyContext): boolean => ctx.model === "T8E00" || ctx.model === "T8P00";
