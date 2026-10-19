@@ -574,7 +574,7 @@ session idle-detaches so a battery device sleeps — see [Connectivity & battery
 
 | Need                                | Use                                                                         |
 | ----------------------------------- | --------------------------------------------------------------------------- |
-| Raw frames, custom pipeline         | `cam.live()` → `on("video"/"audio")`                                      |
+| Raw frames, custom pipeline         | `cam.live()` → `on("video"/"audio")`                                        |
 | Pipe bytes to a file/socket/encoder | `cam.openReadable()`                                                        |
 | Serve HLS / feed an MSE player      | `cam.recordFragments()`                                                     |
 | A single still                      | `cam.snapshotLive()` (fresh) or `cam.snapshotStored()` (retained push JPEG) |
