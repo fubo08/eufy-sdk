@@ -127,6 +127,9 @@ export const isHomeBase = (ctx: FamilyContext): boolean => has(HOMEBASE_TYPES, c
 export const isStation9000 = (ctx: FamilyContext): boolean => ctx.deviceType === DeviceType.STATION_9000;
 /** T8N00 NVR, identified by its reported model. */
 export const isNvrT8N00 = (ctx: FamilyContext): boolean => ctx.model === "T8N00";
+
+/** PoE cameras whose media is served by their NVR's portal call. */
+export const isNvrMediaCamera = (ctx: FamilyContext): boolean => ctx.model === "T8E00" || ctx.model === "T8P00";
 /** Video Doorbell C31 (T8223), identified by its reported model. */
 export const isDoorbellT8223 = (ctx: FamilyContext): boolean => ctx.model === "T8223";
 /** Wired doorbell (DeviceType.DOORBELL). */
@@ -160,6 +163,3 @@ export const isAiotVacuum = (ctx: FamilyContext): boolean => ctx.category !== "e
  * vacuums receive the same write actions as AIoT ones, routed by the facade's `routeCommand`.
  */
 export const isTuyaVacuum = (ctx: FamilyContext): boolean => ctx.category === "eufy_home_tuya";
-
-/** PoE cameras whose media is served by their NVR's portal call. */
-export const isNvrMediaCamera = (ctx: FamilyContext): boolean => ctx.model === "T8E00" || ctx.model === "T8P00";
