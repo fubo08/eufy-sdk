@@ -1,0 +1,36 @@
+name: NVR optical view verification
+on:
+  push:
+    branches: [test/pr441-views-ci]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825d76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.5.0
+          cache: npm
+      - run: npm ci
+      - name: Public optical view regressions fail on unchanged beta.74
+        shell: bash
+        run: |
+          files=(src/client/eufy-mega.ts src/core/contracts.ts src/model/capabilities/camera.ts src/model/device-family.ts src/transport/rtc/command-router.ts src/transport/rtc/live.ts)
+          trap 'git restore -- "${files[@]}"' EXIT
+          for file in "${files[@]}"; do
+            git show 425c877c4f684e1b54318b03ed7451c0c4a90593:"$file" > "$file"
+          done
+          set +e
+          NO_COLOR=1 npx vitest run src/client/__tests__/nvr-media-routing.spec.ts -t 'public NVR optical view selection' > /tmp/before.log 2>&1
+          result=$?
+          set -e
+          tail -n 35 /tmp/before.log
+          test "$result" -eq 1
+          grep -q '7 failed' /tmp/before.log
+          grep -q '8 skipped' /tmp/before.log
+      - name: Full verification of the fixed source
+        run: npm run verify
