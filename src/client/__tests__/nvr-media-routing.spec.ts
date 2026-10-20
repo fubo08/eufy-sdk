@@ -48,6 +48,7 @@ function fixture(model: string, name: string) {
     userId: "synthetic",
     gtoken: "synthetic",
   });
+  vi.spyOn(internals.mega, "portalShard").mockResolvedValue("eu-pr");
   const p2p = vi.spyOn(internals.p2p, "mediaProviderFor");
   return { client, internals, p2p };
 }
