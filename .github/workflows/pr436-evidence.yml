@@ -1,0 +1,37 @@
+name: NVR media refactor verification
+on:
+  push:
+    branches: [test/pr450-nvr-cuts4-ci]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24.5.0
+          cache: npm
+      - run: npm ci
+      - name: Public caller regression on unchanged beta routing
+        shell: bash
+        run: |
+          cp src/client/eufy-mega.ts /tmp/eufy-fixed.ts
+          trap 'cp /tmp/eufy-fixed.ts src/client/eufy-mega.ts' EXIT
+          git show 3779324fcf93d6e96567fd16c0ad0768e06f0a0b:src/client/eufy-mega.ts > src/client/eufy-mega.ts
+          set +e
+          npx vitest run src/client/__tests__/nvr-media-routing.spec.ts -t 'binds' > /tmp/before.log 2>&1
+          result=$?
+          set -e
+          cat /tmp/before.log
+          test "$result" -eq 1
+          grep -q '2 failed' /tmp/before.log
+          grep -q 'mediaProviderFor' /tmp/before.log
+      - name: Full verification
+        run: npm run verify
+      - name: Internal audio constants stay off the package root
+        run: |
+          node --input-type=module -e "import * as sdk from './dist/index.js'; const leaked=['CMD_AUDIO_FRAME','AUDIO_HEADER_LEN','AUDIO_TYPE_OFFSET','AUDIO_CODECS'].filter(n=>n in sdk); console.log({leaked}); if(leaked.length) process.exit(1);"
