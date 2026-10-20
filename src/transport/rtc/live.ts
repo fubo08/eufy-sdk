@@ -19,7 +19,7 @@
 import { EventEmitter } from "node:events";
 import type { LiveAudioFrame, LiveStreamHandle, LiveVideoFrame } from "../../core/contracts.js";
 import type { Logger } from "../../core/logger.js";
-import { AUDIO_CODECS, AUDIO_HEADER_LEN, AUDIO_TYPE_OFFSET, CMD_AUDIO_FRAME } from "../p2p/live-stream.js";
+import { AUDIO_CODECS, AUDIO_HEADER_LEN, AUDIO_TYPE_OFFSET, CMD_AUDIO_FRAME } from "../p2p/audio-frame.js";
 import { hasIdr } from "../p2p/annexb.js";
 import { PORTAL_KEEPALIVE, PORTAL_KEEPALIVE_MS } from "./portal-keepalive.js";
 import type { RtcSession } from "./session.js";
@@ -51,7 +51,7 @@ const STREAM_TYPE_HEVC = 1;
 /**
  * Read a `1300` body: a 22-byte media header (u32 LE video length at 0, stream type at 5, u16 LE width
  * and height at 10 and 12), then the Annex B video. This is the layout the portal's own HEVC worker
- * parses. Answers `undefined` for a short body, an unsupported stream type, or a declared length the body
+ * parses. Answers `undefined` for a short body, a stream that is not HEVC, or a declared length the body
  * does not hold.
  */
 export function parseMediaBody(body: Buffer): { data: Buffer; width: number; height: number } | undefined {
@@ -227,15 +227,14 @@ export class RtcLiveStream extends EventEmitter implements LiveStreamHandle {
     const media = parseMediaBody(frame.subarray(PORTAL_HEADER_LENGTH, PORTAL_HEADER_LENGTH + h.paramLength));
     if (!media) return;
     const { data, width, height } = media;
-    const codec = "h265";
     if (width && height) {
       this.width = width;
       this.height = height;
     }
     const out: LiveVideoFrame = {
-      codec,
+      codec: "h265",
       data,
-      keyframe: hasIdr(data, codec),
+      keyframe: hasIdr(data, "h265"),
       width: this.width,
       height: this.height,
     };

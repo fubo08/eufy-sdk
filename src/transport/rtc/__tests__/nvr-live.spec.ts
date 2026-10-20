@@ -5,16 +5,15 @@ import { buildPortalHeader, PortalLinkType, SegmentCounter } from "../portal-pac
 import type { RtcSession } from "../session.js";
 import { RtcCommandRouter, type RtcLiveRoute } from "../command-router.js";
 
-/** Synthetic complete access units: the media header preserves a 64-bit clock and real frame geometry. */
-function video(type = 1, stamp = 1_800_000_000_000n) {
-  const bytes = Buffer.from(type === 1 ? "000000012601af0e" : "00000001658884", "hex");
+/** Synthetic complete HEVC access unit with frame geometry. */
+function video() {
+  const bytes = Buffer.from("000000012601af0e", "hex");
   const body = Buffer.alloc(22 + bytes.length);
   body.writeUInt32LE(bytes.length);
   body[4] = 1;
-  body[5] = type;
+  body[5] = 1;
   body.writeUInt16LE(3840, 10);
   body.writeUInt16LE(2160, 12);
-  body.writeBigUInt64LE(stamp, 14);
   bytes.copy(body, 22);
   return Buffer.concat([buildPortalHeader(1300, body.length, 101, 1), body]);
 }
@@ -22,7 +21,6 @@ function audio(type = 2) {
   const body = Buffer.alloc(20);
   body.writeUInt32LE(4);
   body[5] = type;
-  body.writeBigUInt64LE(1_800_000_000_032n, 8);
   body.fill(0xd5, 16);
   return Buffer.concat([buildPortalHeader(1301, body.length, 101, 1), body]);
 }
