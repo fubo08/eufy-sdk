@@ -58,16 +58,10 @@ Worth knowing:
 
 ## T8N00 PoE cameras
 
-T8E00 and T8P00 cameras attached to a T8N00 use independent portal calls for media.
-Both cameras use portal sensor 0. Public lens
-selection is not part of this path. Repeated consumers of one camera share a source;
-different cameras have separate sessions, independent of station commands.
-
-`live()` delivers H.265 video and AAC-LC or G.711 A-law audio.
-`openReadable()` provides video, and `snapshotLive()` joins the same source for a fresh still.
-Recording and talkback are not implemented for this route. The call uses ICE `all`,
-which permits direct and relay candidates without guaranteeing a local connection.
-Signaling loss closes the session; a new consumer can start a fresh call.
+T8E00 and T8P00 cameras attached to a T8N00 support `live()`, `openReadable()` and
+`snapshotLive()`. `live()` delivers H.265 video and AAC-LC or G.711 A-law audio;
+`openReadable()` provides video, and `snapshotLive()` captures a fresh still.
+Recording and talkback are not implemented for this route.
 
 ## 1. Event stream (low-level)
 

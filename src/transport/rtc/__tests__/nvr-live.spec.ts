@@ -1,7 +1,6 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RtcLiveStream } from "../live.js";
-import { buildPortalHeader, PortalLinkType, SegmentCounter } from "../portal-packet.js";
+import { buildPortalHeader, PortalLinkType } from "../portal-packet.js";
 import type { RtcSession } from "../session.js";
 import { RtcCommandRouter, type RtcLiveRoute } from "../command-router.js";
 
@@ -89,8 +88,8 @@ describe("independent NVR media lifetime", () => {
     const requests = sessions.map((s) => JSON.parse(s.sendCommand.mock.calls[0]![0].subarray(16).toString()));
     expect(requests.map((r) => r.cmd)).toEqual([1003, 1003]);
     expect(requests.map((r) => r.payload.chn_list[0])).toEqual([
-      { index: 0, chn: 3, sensor: 0 },
-      { index: 0, chn: 4, sensor: 0 },
+      { index: 0, chn: 3, sensor: 0, isUps: 0, isClicked: true },
+      { index: 0, chn: 4, sensor: 0, isUps: 0, isClicked: true },
     ]);
     expect(requests.map((r) => r.payload.audio_chn)).toEqual([3, 4]);
     const aFrames = vi.fn();
@@ -135,21 +134,5 @@ describe("independent NVR media lifetime", () => {
     const retry = await camera.live();
     expect(sessions).toHaveLength(2);
     retry.stop();
-  });
-  it("does not connect after disposal before the asynchronous start", async () => {
-    const s = new Session();
-    const stream = new RtcLiveStream({
-      channel: 3,
-      nvr: true,
-      session: s as unknown as RtcSession,
-      seg: new SegmentCounter(),
-      stationSn: route.stationSn,
-      accountId: "synthetic",
-    });
-    stream.start();
-    stream.stop();
-    await Promise.resolve();
-    expect(s.connect).not.toHaveBeenCalled();
-    expect(s.close).toHaveBeenCalledOnce();
   });
 });

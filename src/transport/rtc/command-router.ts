@@ -212,18 +212,11 @@ export class RtcCommandRouter {
    * session. Recording has no wire here and is refused.
    */
   trackMediaProviderFor(route: RtcRoute): MediaProvider {
-    const sn = route.stationSn;
     return this.callMediaProviderFor(
-      sn,
-      () => {
-        const identity = this.deps.identity();
-        if (!identity) throw new Error(`rtc: not logged in, cannot call ${sn}`);
-        return new RtcCallLiveStream(
-          this.newSession(route, route.adminUserId || identity.userId, identity),
-          this.deps.logger,
-        );
-      },
-      `record is not available for ${sn} over a portal call`,
+      route,
+      route.stationSn,
+      (session) => new RtcCallLiveStream(session, this.deps.logger),
+      `record is not available for ${route.stationSn} over a portal call`,
       45_000,
     );
   }
@@ -231,44 +224,41 @@ export class RtcCommandRouter {
   /** NVR media uses a dedicated call per camera, independent of station commands. */
   nvrMediaProviderFor(route: RtcLiveRoute): MediaProvider {
     return this.callMediaProviderFor(
-      `${route.stationSn}:${route.cameraSn}:${route.channel}`,
-      () => {
-        const identity = this.deps.identity();
-        if (!identity) throw new Error("rtc: not logged in");
-        const accountId = route.adminUserId || identity.userId;
-        return new RtcLiveStream({
-          session: this.newSession(route, accountId, identity),
+      route,
+      route.cameraSn,
+      (session, accountId) =>
+        new RtcLiveStream({
+          session,
           seg: new SegmentCounter(),
           stationSn: route.stationSn,
           channel: route.channel,
           accountId,
           logger: this.deps.logger,
           nvr: true,
-        });
-      },
+        }),
       "record is not available over an NVR portal call",
-      undefined,
-      (opts) => {
-        opts.signal?.throwIfAborted();
-        if (!this.deps.identity()) throw new Error("rtc: not logged in");
-      },
     );
   }
 
   /** Share a dedicated-call source and its consumer operations under one route key. */
   private callMediaProviderFor(
+    route: RtcRoute,
     key: string,
-    makeStream: () => LiveStreamHandle,
+    makeStream: (session: RtcSession, accountId: string) => LiveStreamHandle,
     recordError: string,
     warmTimeoutMs?: number,
-    precheck?: (opts: SharedSourceHints & AbortableCall) => void,
   ): MediaProvider {
     const sourceFor = (opts: SharedSourceHints & AbortableCall = {}): SharedLiveSource => {
-      precheck?.(opts);
+      opts.signal?.throwIfAborted();
       let source = this.callSources.get(key);
       if (!source) {
         source = new SharedLiveSource({
-          makeStream,
+          makeStream: () => {
+            const identity = this.deps.identity();
+            if (!identity) throw new Error(`rtc: not logged in, cannot call ${route.stationSn}`);
+            const accountId = route.adminUserId || identity.userId;
+            return makeStream(this.newSession(route, accountId, identity), accountId);
+          },
           label: key,
           logger: this.deps.logger,
           powered: opts.powered,

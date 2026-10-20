@@ -114,11 +114,7 @@ export class RtcLiveStream extends EventEmitter implements LiveStreamHandle {
     if (this.opts.nvr) {
       session.on("connected", this.onConnected);
       session.on("error", this.onError);
-      Promise.resolve()
-        .then(() => {
-          if (this.running) return session.connect();
-        })
-        .catch(this.onError);
+      session.connect().catch(this.onError);
     } else this.sendStart();
     return this;
   }
@@ -138,19 +134,17 @@ export class RtcLiveStream extends EventEmitter implements LiveStreamHandle {
           cmd: LIVE_START,
           payload: {
             ClientOS: "WEB",
-            entrytype: nvr ? 1 : 0,
+            entrytype: 0,
             camera_type: 0,
             key: "",
-            msg_id: nvr ? "" : 116,
+            msg_id: 116,
             audio_chn: nvr ? this.opts.channel : -1,
             streamtype: 2,
             stitch_mode: 1,
-            chn_list: [
-              nvr
-                ? { index: 0, chn: this.opts.channel, sensor: 0 }
-                : { index: 0, chn: this.opts.channel, sensor: 0, isUps: 0, isClicked: true },
-            ],
-            ...(nvr ? {} : { pip_cord: { x1: 0, y1: 0, x2: 0, y2: 0 }, station_video_type: 6, play_id: 1 }),
+            chn_list: [{ index: 0, chn: this.opts.channel, sensor: 0, isUps: 0, isClicked: true }],
+            pip_cord: { x1: 0, y1: 0, x2: 0, y2: 0 },
+            station_video_type: 6,
+            play_id: 1,
           },
         },
       }),

@@ -1280,12 +1280,12 @@ export class EufyMega extends EventEmitter {
     const route = this.rtcRouteFor(sn);
     if (route?.mediaTrack) return this.rtc.trackMediaProviderFor(route);
     if (!route?.attached) return undefined;
-    const raw = (this.registry.list().find((d) => d.sn === sn)?.raw ?? {}) as { device_channel?: unknown };
+    const camera = this.registry.list().find((d) => d.sn === sn);
+    const raw = (camera?.raw ?? {}) as { device_channel?: unknown };
     const channel = typeof raw.device_channel === "number" ? raw.device_channel : undefined;
     if (channel === undefined || this.registry.serialForFrame(route.stationSn, channel) !== sn) return undefined;
     if (route.signalingMode === "call") {
-      const camera = this.registry.require(sn);
-      if (!isNvrMediaCamera(camera)) return undefined;
+      if (!camera || !isNvrMediaCamera(camera)) return undefined;
       return this.rtc.nvrMediaProviderFor({ ...route, cameraSn: sn, channel });
     }
     return this.rtc.mediaProviderFor({ ...route, cameraSn: sn, channel });
