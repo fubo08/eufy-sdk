@@ -46,6 +46,7 @@ function fixture(model: string, name: string) {
     },
   ] as EufyDevice[];
   vi.spyOn(internals.mega, "getDeviceParamList").mockResolvedValue({ params: [] });
+  vi.spyOn(internals.mega, "portalShard").mockResolvedValue("ie-pr");
   vi.spyOn(internals.mega, "rtcIdentity").mockReturnValue({
     authToken: "synthetic",
     userId: "synthetic",
