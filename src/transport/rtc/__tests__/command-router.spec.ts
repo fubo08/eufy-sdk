@@ -167,6 +167,13 @@ describe("RtcCommandRouter", () => {
     expect(sessions).toHaveLength(0);
   });
 
+  it("opens the station session on a shard the provider resolves asynchronously", async () => {
+    const { router, sessions } = makeRouter({ shard: async () => "ie-pr" });
+    await router.dispatchCommand(ST, arming(1));
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.opts.shard).toBe("ie-pr");
+  });
+
   it("sends the app's 1350 envelope on the station channel and resolves on the ACK", async () => {
     const { router, sessions } = makeRouter();
     await router.dispatchCommand(ST, arming(1));
@@ -460,6 +467,54 @@ describe("RtcCommandRouter live view", () => {
     return Buffer.concat([buildPortalHeader(1300, body.length, 101, 0, 0), body]);
   };
   const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
+
+  it("opens a portal `call` media session on a shard resolved asynchronously (T8223 path)", async () => {
+    const { router, sessions } = makeRouter({ shard: async () => "ie-pr" });
+    try {
+      const handle = await router.trackMediaProviderFor({ ...CAM, signalingMode: "call" }).live();
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]!.opts.shard).toBe("ie-pr");
+      handle.stop();
+    } finally {
+      router.close();
+    }
+  });
+
+  it("opens NVR camera media on the shard resolved asynchronously", async () => {
+    const { router, sessions } = makeRouter({ shard: async () => "ie-pr" });
+    try {
+      const media = router.nvrMediaProviderFor(
+        { ...CAM, cameraSn: "T8000P0000000003", channel: 3, signalingMode: "call" },
+        [0, 1],
+      );
+      const handle = await media.live({ view: 1 });
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]!.opts.shard).toBe("ie-pr");
+      handle.stop();
+    } finally {
+      router.close();
+    }
+  });
+
+  it("a later call warm-up signs on the latest shard, not the one the first resolved", async () => {
+    let n = 0;
+    const { router, sessions } = makeRouter({ shard: async () => (n++ === 0 ? "eu-pr" : "ie-pr") });
+    await onFakeTimers(async () => {
+      try {
+        const media = router.trackMediaProviderFor({ ...CAM, signalingMode: "call" });
+        const first = await media.live();
+        expect(sessions[0]!.opts.shard).toBe("eu-pr");
+        first.stop();
+        await vi.advanceTimersByTimeAsync(8_000);
+        const second = await media.live();
+        expect(sessions).toHaveLength(2);
+        expect(sessions[1]!.opts.shard).toBe("ie-pr");
+        second.stop();
+      } finally {
+        router.close();
+      }
+    });
+  });
 
   it("shares one pull between concurrent viewers of the same camera", async () => {
     const { router, sessions } = makeRouter();
