@@ -5,7 +5,7 @@ import { LiveSnapshotUnavailableError } from "../../core/contracts.js";
 import { EufyMega } from "../eufy-mega.js";
 import * as snapshots from "../../transport/p2p/media.js";
 import { buildPortalHeader } from "../../transport/rtc/portal-packet.js";
-import { RtcSession } from "../../transport/rtc/session.js";
+import { RtcSession, type RtcSessionOptions } from "../../transport/rtc/session.js";
 
 const HUB = "T8000P0000000000";
 const CAMERA = "T8000P0000000001";
@@ -46,6 +46,7 @@ function fixture(model: string, name: string) {
     },
   ] as EufyDevice[];
   vi.spyOn(internals.mega, "getDeviceParamList").mockResolvedValue({ params: [] });
+  vi.spyOn(internals.mega, "portalShard").mockResolvedValue("ie-pr");
   vi.spyOn(internals.mega, "rtcIdentity").mockReturnValue({
     authToken: "synthetic",
     userId: "synthetic",
@@ -72,6 +73,30 @@ describe("public NVR camera media binding", () => {
       internals.rtc.close();
     },
   );
+  it("resolves the portal WEB shard through the public NVR secondary live caller", async () => {
+    const shards: string[] = [];
+    vi.spyOn(RtcSession.prototype, "connect").mockImplementation(async function (this: RtcSession) {
+      shards.push((this as unknown as { opts: RtcSessionOptions }).opts.shard);
+      this.emit("connected");
+    });
+    const sent = vi.spyOn(RtcSession.prototype, "sendCommand").mockReturnValue(true);
+    const { client, internals, p2p } = fixture("T8E00", "Synthetic garden PoE Cam S4");
+    vi.spyOn(internals.mega, "rtcShard", "get").mockReturnValue("us");
+    try {
+      const device = await client.getDevice(CAMERA);
+      const stream = await device.camera?.()?.live?.({ view: 1 });
+      expect(shards).toEqual(["ie-pr"]);
+      expect(internals.mega.portalShard).toHaveBeenCalledOnce();
+      expect(JSON.parse(sent.mock.calls[0]![0].subarray(16).toString())).toMatchObject({
+        cmd: 1003,
+        payload: { chn_list: [{ chn: 3, sensor: 1 }] },
+      });
+      expect(p2p).not.toHaveBeenCalled();
+      stream?.stop();
+    } finally {
+      internals.rtc.close();
+    }
+  });
   it("preserves cancellation and login failures from the public snapshot caller", async () => {
     const { client, internals } = fixture("T8P00", "Synthetic PoE Cam E40");
     const device = await client.getDevice(CAMERA);
